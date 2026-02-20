@@ -4,7 +4,13 @@ import { ok, fail } from '@/lib/domain/http';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { classifyAndExtract } from '@/lib/domain/ai';
 import { mapIntentToIncrement } from '@/lib/domain/scoring';
-import { MAX_STEPS, getClosingMessage, getEscalationMessage, getNextQuestion } from '@/lib/domain/flow';
+import {
+  MAX_STEPS,
+  getClosingMessage,
+  getEscalationMessage,
+  getNextQuestion,
+  getQuestionSet
+} from '@/lib/domain/flow';
 import { decryptSecret } from '@/lib/domain/crypto';
 import { sendWhatsappText } from '@/lib/domain/messaging';
 import { sendLeadNotificationEmail } from '@/lib/domain/email';
@@ -174,23 +180,27 @@ export async function POST(req: Request) {
   const ai = await classifyAndExtract(parsed.text, client.strategic_questions);
   const increment = mapIntentToIncrement(ai.intent_detected);
   const nextScore = Math.min(100, Number(lead.score ?? 0) + increment);
-  const nextStep = Math.min(MAX_STEPS, Number(lead.current_step ?? 0) + 1);
+  const currentStep = Number(lead.current_step ?? 0);
+  const questionSet = getQuestionSet(client.strategic_questions);
+  const maxQuestionSteps = Math.min(MAX_STEPS, questionSet.length);
 
   const mergedFields = {
     ...(lead.extracted_fields && typeof lead.extracted_fields === 'object' ? lead.extracted_fields : {}),
     ...(ai.extracted_fields ?? {})
   };
 
-  await service
+  const { error: updateLeadStateError } = await service
     .from('leads')
     .update({
       score: nextScore,
-      current_step: nextStep,
       extracted_fields: mergedFields,
       last_user_message_at: new Date().toISOString(),
       wa_profile_name: lead.wa_profile_name ?? parsed.waProfileName
     })
     .eq('id', lead.id);
+  if (updateLeadStateError) {
+    return fail(updateLeadStateError.message, 500);
+  }
 
   const escalateReason = ai.user_requested_human
     ? 'USER_REQUEST'
@@ -203,7 +213,7 @@ export async function POST(req: Request) {
   if (escalateReason) {
     const shouldNotify = !lead.notified_at;
 
-    await service
+    const { error: escalateUpdateError } = await service
       .from('leads')
       .update({
         conversation_status: 'HUMAN_REQUIRED',
@@ -211,6 +221,9 @@ export async function POST(req: Request) {
         notified_at: shouldNotify ? new Date().toISOString() : lead.notified_at
       })
       .eq('id', lead.id);
+    if (escalateUpdateError) {
+      return fail(escalateUpdateError.message, 500);
+    }
 
     const escalationText = getEscalationMessage(client.human_forward_number);
 
@@ -223,7 +236,7 @@ export async function POST(req: Request) {
 
     const outWaMessageId = waResponse?.messages?.[0]?.id ?? null;
 
-    await service.from('messages').insert({
+    const { error: escalationMessageInsertError } = await service.from('messages').insert({
       client_id: client.id,
       lead_id: lead.id,
       direction: 'OUTBOUND',
@@ -232,26 +245,58 @@ export async function POST(req: Request) {
       text_content: escalationText,
       raw_payload: waResponse ?? {}
     });
+    if (escalationMessageInsertError) {
+      return fail(escalationMessageInsertError.message, 500);
+    }
 
-    await service
+    const { error: escalateTimestampError } = await service
       .from('leads')
       .update({ last_bot_message_at: new Date().toISOString() })
       .eq('id', lead.id);
+    if (escalateTimestampError) {
+      return fail(escalateTimestampError.message, 500);
+    }
 
     if (shouldNotify) {
-      await sendLeadNotificationEmail({
+      const emailResult = await sendLeadNotificationEmail({
         to: client.notification_email,
         subject: 'LeadOS: Lead requiere intervención humana',
         html: `<p>Lead: ${parsed.waProfileName ?? parsed.waUserId}</p><p>Score: ${nextScore}</p><p>Razón: ${escalateReason}</p>`
       });
+      if (!emailResult.sent) {
+        console.error('Lead notification email failed', {
+          leadId: lead.id,
+          clientId: client.id,
+          reason: emailResult.reason,
+          status: 'status' in emailResult ? emailResult.status : undefined
+        });
+      }
     }
 
     return ok({ received: true, escalated: true });
   }
 
-  const botText = nextStep >= MAX_STEPS
+  const candidateBotText = currentStep >= maxQuestionSteps
     ? getClosingMessage()
-    : getNextQuestion(client.strategic_questions, nextStep);
+    : getNextQuestion(client.strategic_questions, currentStep);
+
+  const { data: previousOutbound } = await service
+    .from('messages')
+    .select('text_content')
+    .eq('lead_id', lead.id)
+    .eq('client_id', client.id)
+    .eq('direction', 'OUTBOUND')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // Avoid sending the same guided question twice in a row.
+  const botText =
+    previousOutbound?.text_content &&
+    previousOutbound.text_content === candidateBotText &&
+    candidateBotText !== getClosingMessage()
+      ? getClosingMessage()
+      : candidateBotText;
 
   const waResponse = await sendWhatsappText({
     phoneNumberId: parsed.phoneNumberId,
@@ -262,7 +307,7 @@ export async function POST(req: Request) {
 
   const outWaMessageId = waResponse?.messages?.[0]?.id ?? null;
 
-  await service.from('messages').insert({
+  const { error: outboundInsertError } = await service.from('messages').insert({
     client_id: client.id,
     lead_id: lead.id,
     direction: 'OUTBOUND',
@@ -271,11 +316,20 @@ export async function POST(req: Request) {
     text_content: botText,
     raw_payload: waResponse ?? {}
   });
+  if (outboundInsertError) {
+    return fail(outboundInsertError.message, 500);
+  }
 
-  await service
+  const { error: advanceStepError } = await service
     .from('leads')
-    .update({ last_bot_message_at: new Date().toISOString() })
+    .update({
+      current_step: Math.min(MAX_STEPS, currentStep + 1),
+      last_bot_message_at: new Date().toISOString()
+    })
     .eq('id', lead.id);
+  if (advanceStepError) {
+    return fail(advanceStepError.message, 500);
+  }
 
   return ok({ received: true, escalated: false });
 }
