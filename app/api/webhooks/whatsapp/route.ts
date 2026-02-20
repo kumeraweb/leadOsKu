@@ -92,6 +92,7 @@ type LeadRow = {
   conversation_status: 'ACTIVE' | 'HUMAN_REQUIRED' | 'HUMAN_TAKEN' | 'CLOSED';
   notified_at: string | null;
   wa_profile_name: string | null;
+  extracted_fields: Record<string, unknown> | null;
 };
 
 type FlowRow = {
@@ -133,6 +134,14 @@ function parsePayload(payload: unknown): ParsedPayload | null {
 
 function addMinutesIso(base: Date, minutes: number): string {
   return new Date(base.getTime() + minutes * 60 * 1000).toISOString();
+}
+
+function normalizeInput(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
 }
 
 async function sendBotMessage(params: {
@@ -260,7 +269,9 @@ export async function POST(req: Request) {
 
   const { data: openLead } = await service
     .from('leads')
-    .select('id, score, flow_id, current_step_id, reminders_sent, irrelevant_streak, conversation_status, notified_at, wa_profile_name')
+    .select(
+      'id, score, flow_id, current_step_id, reminders_sent, irrelevant_streak, conversation_status, notified_at, wa_profile_name, extracted_fields'
+    )
     .eq('client_id', client.id)
     .eq('wa_user_id', parsed.waUserId)
     .in('conversation_status', ['ACTIVE', 'HUMAN_REQUIRED', 'HUMAN_TAKEN'])
@@ -294,7 +305,7 @@ export async function POST(req: Request) {
         next_reminder_at: addMinutesIso(now, flowBundle.flow.reminder_delay_minutes)
       })
       .select(
-        'id, score, flow_id, current_step_id, reminders_sent, irrelevant_streak, conversation_status, notified_at, wa_profile_name'
+        'id, score, flow_id, current_step_id, reminders_sent, irrelevant_streak, conversation_status, notified_at, wa_profile_name, extracted_fields'
       )
       .single<LeadRow>();
 
@@ -358,6 +369,10 @@ export async function POST(req: Request) {
     return ok({ received: true, ignored: true, reason: 'invalid_step_or_options' });
   }
 
+  const extractedFields =
+    lead.extracted_fields && typeof lead.extracted_fields === 'object' ? lead.extracted_fields : {};
+  const waitingTerminalChoice = extractedFields.awaiting_reentry_choice === true;
+
   if (leadJustCreated) {
     try {
       await sendBotMessage({
@@ -384,6 +399,129 @@ export async function POST(req: Request) {
     }
 
     return ok({ received: true, started: true });
+  }
+
+  if (waitingTerminalChoice) {
+    const normalized = normalizeInput(parsed.text);
+
+    if (normalized === '1') {
+      const shouldNotify = !lead.notified_at;
+      const escalateLead = await service
+        .from('leads')
+        .update({
+          conversation_status: 'HUMAN_REQUIRED',
+          human_required_reason: 'REENTRY_ESCALATION',
+          notified_at: shouldNotify ? new Date().toISOString() : lead.notified_at,
+          next_reminder_at: null,
+          extracted_fields: { ...extractedFields, awaiting_reentry_choice: false },
+          last_user_message_at: new Date().toISOString()
+        })
+        .eq('id', lead.id);
+      if (escalateLead.error) {
+        return fail(escalateLead.error.message, 500);
+      }
+
+      const handoffText = client.human_forward_number
+        ? `Gracias. Te derivaré con un ejecutivo. También puedes escribir a ${client.human_forward_number}.`
+        : 'Gracias. Te derivaré con un ejecutivo del equipo.';
+
+      try {
+        await sendBotMessage({
+          service,
+          clientId: client.id,
+          leadId: lead.id,
+          phoneNumberId: parsed.phoneNumberId,
+          waUserId: parsed.waUserId,
+          accessTokenEnc: channel.meta_access_token_enc,
+          text: handoffText
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : 'Could not send reentry handoff', 500);
+      }
+
+      if (shouldNotify) {
+        const emailResult = await sendLeadNotificationEmail({
+          to: client.notification_email,
+          subject: 'LeadOS: Lead requiere intervención humana',
+          html: `<p>Lead: ${parsed.waProfileName ?? parsed.waUserId}</p><p>Score: ${lead.score}</p><p>Razón: REENTRY_ESCALATION</p>`
+        });
+        if (!emailResult.sent) {
+          console.error('Lead notification email failed', {
+            leadId: lead.id,
+            clientId: client.id,
+            reason: emailResult.reason
+          });
+        }
+      }
+
+      return ok({ received: true, escalated: true, reentry: true });
+    }
+
+    if (normalized === '0') {
+      const { data: firstStep } = await service
+        .from('flow_steps')
+        .select('id, step_order, prompt_text')
+        .eq('flow_id', lead.flow_id!)
+        .order('step_order', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (!firstStep) {
+        return ok({ received: true, ignored: true, reason: 'missing_first_step' });
+      }
+
+      const { data: firstOptions } = await service
+        .from('flow_step_options')
+        .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal')
+        .eq('step_id', firstStep.id)
+        .order('option_order', { ascending: true });
+
+      const updateLead = await service
+        .from('leads')
+        .update({
+          current_step_id: firstStep.id,
+          current_step: firstStep.step_order,
+          irrelevant_streak: 0,
+          extracted_fields: { ...extractedFields, awaiting_reentry_choice: false },
+          last_user_message_at: new Date().toISOString(),
+          next_reminder_at: addMinutesIso(new Date(), Number(flowBundle.flow.reminder_delay_minutes))
+        })
+        .eq('id', lead.id);
+      if (updateLead.error) {
+        return fail(updateLead.error.message, 500);
+      }
+
+      try {
+        await sendBotMessage({
+          service,
+          clientId: client.id,
+          leadId: lead.id,
+          phoneNumberId: parsed.phoneNumberId,
+          waUserId: parsed.waUserId,
+          accessTokenEnc: channel.meta_access_token_enc,
+          text: ['Perfecto. Estas son todas las opciones:', renderOptionsList((firstOptions ?? []) as FlowOption[])].join('\n')
+        });
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : 'Could not send reentry options', 500);
+      }
+
+      return ok({ received: true, reentry: true, options: true });
+    }
+
+    try {
+      await sendBotMessage({
+        service,
+        clientId: client.id,
+        leadId: lead.id,
+        phoneNumberId: parsed.phoneNumberId,
+        waUserId: parsed.waUserId,
+        accessTokenEnc: channel.meta_access_token_enc,
+        text: 'Responde 0 para ver todas las opciones o 1 para hablar con una ejecutiva.'
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : 'Could not send reentry hint', 500);
+    }
+
+    return ok({ received: true, waiting_reentry_choice: true });
   }
 
   const deterministicOption = extractDirectOption(parsed.text, stepBundle.options);
@@ -543,7 +681,8 @@ export async function POST(req: Request) {
     irrelevant_streak: 0,
     free_text_summary: aiSummary,
     wa_profile_name: lead.wa_profile_name ?? parsed.waProfileName,
-    last_user_message_at: new Date().toISOString()
+    last_user_message_at: new Date().toISOString(),
+    extracted_fields: { ...extractedFields, awaiting_reentry_choice: false }
   };
 
   const shouldEscalateByOption = selectedOption.is_contact_human;
@@ -603,18 +742,16 @@ export async function POST(req: Request) {
   }
 
   if (selectedOption.is_terminal) {
-    const closeLead = await service
+    const keepLeadOpen = await service
       .from('leads')
       .update({
         ...baseLeadUpdate,
-        conversation_status: 'CLOSED',
-        closed_at: new Date().toISOString(),
-        current_step_id: null,
+        extracted_fields: { ...extractedFields, awaiting_reentry_choice: true },
         next_reminder_at: null
       })
       .eq('id', lead.id);
-    if (closeLead.error) {
-      return fail(closeLead.error.message, 500);
+    if (keepLeadOpen.error) {
+      return fail(keepLeadOpen.error.message, 500);
     }
 
     try {
@@ -625,13 +762,13 @@ export async function POST(req: Request) {
         phoneNumberId: parsed.phoneNumberId,
         waUserId: parsed.waUserId,
         accessTokenEnc: channel.meta_access_token_enc,
-        text: 'Perfecto, gracias por tu respuesta. Si necesitas ayuda más adelante, aquí estaremos.'
+        text: 'Perfecto, gracias por tu respuesta. Puedes responder 0 para ver todas las opciones o 1 para hablar de inmediato con una ejecutiva.'
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : 'Could not send terminal message', 500);
     }
 
-    return ok({ received: true, terminal: true });
+    return ok({ received: true, terminal_choice_requested: true });
   }
 
   const nextStep = await getNextStep(service, stepBundle.step.flow_id, stepBundle.step.step_order);
