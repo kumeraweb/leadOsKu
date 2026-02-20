@@ -17,6 +17,7 @@ export default function BackofficePage() {
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [clients, setClients] = useState<Client[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const [clientForm, setClientForm] = useState({
     name: '',
@@ -51,33 +52,66 @@ export default function BackofficePage() {
     steps_json: JSON.stringify(
       [
         {
+          node_key: 'inicio',
           step_order: 1,
           prompt_text: '¿Qué tipo de negocio tienes?',
           allow_free_text: false,
           options: [
-            { option_order: 1, option_code: 'SERVICIOS', label_text: 'Servicios', score_delta: 25, is_contact_human: false, is_terminal: false },
-            { option_order: 2, option_code: 'ECOMMERCE', label_text: 'E-commerce', score_delta: 30, is_contact_human: false, is_terminal: false },
-            { option_order: 3, option_code: 'LOCAL', label_text: 'Negocio local', score_delta: 20, is_contact_human: false, is_terminal: false },
-            { option_order: 4, option_code: 'EJECUTIVO', label_text: 'Hablar con ejecutiva ahora', score_delta: 100, is_contact_human: true, is_terminal: false }
+            { option_order: 1, option_code: 'EMPRESA', label_text: 'Soy empresa y quiero contratar', score_delta: 35, is_contact_human: false, is_terminal: false, next_node_key: 'empresa_web' },
+            { option_order: 2, option_code: 'EMPRENDEDOR', label_text: 'Soy emprendedor y quiero contratar', score_delta: 35, is_contact_human: false, is_terminal: false, next_node_key: 'emprendedor_web' },
+            { option_order: 3, option_code: 'APRENDER', label_text: 'Quiero saber qué es Google Ads', score_delta: 10, is_contact_human: false, is_terminal: false, next_node_key: 'explicar_google_ads' },
+            { option_order: 4, option_code: 'PLANES', label_text: 'Quiero conocer los planes', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'mostrar_planes' },
+            { option_order: 5, option_code: 'EJECUTIVA', label_text: 'Contactar ejecutiva', score_delta: 100, is_contact_human: true, is_terminal: false, next_node_key: null }
           ]
         },
         {
+          node_key: 'empresa_web',
           step_order: 2,
-          prompt_text: '¿Cuál es tu objetivo principal en 30 días?',
+          prompt_text: 'Perfecto. ¿Tienes sitio web?',
           allow_free_text: false,
           options: [
-            { option_order: 1, option_code: 'MAS_CONTACTOS', label_text: 'Más contactos', score_delta: 30, is_contact_human: false, is_terminal: false },
-            { option_order: 2, option_code: 'MAS_VENTAS', label_text: 'Más ventas', score_delta: 35, is_contact_human: false, is_terminal: false },
-            { option_order: 3, option_code: 'INFO', label_text: 'Solo información por ahora', score_delta: 5, is_contact_human: false, is_terminal: false }
+            { option_order: 1, option_code: 'SI_WEB', label_text: 'Sí tengo sitio web', score_delta: 20, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' },
+            { option_order: 2, option_code: 'NO_WEB', label_text: 'No tengo sitio web', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' }
           ]
         },
         {
+          node_key: 'emprendedor_web',
           step_order: 3,
-          prompt_text: '¿Buscas contratar ayuda para implementarlo ahora?',
+          prompt_text: 'Súper, atendemos muchos emprendedores. ¿Tienes sitio web?',
           allow_free_text: false,
           options: [
-            { option_order: 1, option_code: 'SI_AHORA', label_text: 'Sí, quiero contratar ahora', score_delta: 40, is_contact_human: true, is_terminal: false },
-            { option_order: 2, option_code: 'LUEGO', label_text: 'No, más adelante', score_delta: 0, is_contact_human: false, is_terminal: true }
+            { option_order: 1, option_code: 'SI_WEB', label_text: 'Sí tengo sitio web', score_delta: 20, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' },
+            { option_order: 2, option_code: 'NO_WEB', label_text: 'No tengo sitio web', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' }
+          ]
+        },
+        {
+          node_key: 'explicar_google_ads',
+          step_order: 4,
+          prompt_text: 'Google Ads te ayuda a captar clientes con anuncios en búsquedas y mapas. ¿Te gustaría contratar?',
+          allow_free_text: false,
+          options: [
+            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
+            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
+          ]
+        },
+        {
+          node_key: 'mostrar_planes',
+          step_order: 5,
+          prompt_text: 'Perfecto. Estos son nuestros planes principales. ¿Te interesa contratar?',
+          allow_free_text: false,
+          options: [
+            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
+            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
+          ]
+        },
+        {
+          node_key: 'contratar_final',
+          step_order: 6,
+          prompt_text: '¿Te gustaría hablar con una ejecutiva para evaluar contratación?',
+          allow_free_text: false,
+          options: [
+            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
+            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
           ]
         }
       ],
@@ -119,6 +153,7 @@ export default function BackofficePage() {
   async function onCreateClient(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setSuccess(null);
 
     const response = await fetch('/api/backoffice/clients', {
       method: 'POST',
@@ -146,6 +181,7 @@ export default function BackofficePage() {
   async function onCreateChannel(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setSuccess(null);
 
     const response = await fetch('/api/backoffice/client-channels', {
       method: 'POST',
@@ -173,6 +209,7 @@ export default function BackofficePage() {
   async function onAssign(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    setSuccess(null);
 
     const response = await fetch('/api/backoffice/user-clients/assign', {
       method: 'POST',
@@ -228,6 +265,7 @@ export default function BackofficePage() {
       setError(payload.error ?? 'No se pudo crear flujo');
       return;
     }
+    setSuccess('Flujo creado correctamente');
   }
 
   return (
@@ -238,6 +276,7 @@ export default function BackofficePage() {
       </div>
 
       {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
+      {success ? <p style={{ color: '#065f46' }}>{success}</p> : null}
 
       <div className="card col">
         <h2>Crear cliente</h2>
@@ -312,6 +351,10 @@ export default function BackofficePage() {
 
       <div className="card col">
         <h2>Crear flujo determinístico</h2>
+        <p style={{ marginTop: 0 }}>
+          Usa <code>node_key</code> en cada step y <code>next_node_key</code> en cada opción para definir ramas.
+          Si una opción debe escalar, marca <code>is_contact_human: true</code>. Si debe terminar, marca <code>is_terminal: true</code>.
+        </p>
         <form className="col" onSubmit={onCreateFlow}>
           <input
             placeholder="client_id"

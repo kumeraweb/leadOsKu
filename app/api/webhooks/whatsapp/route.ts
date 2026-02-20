@@ -218,7 +218,7 @@ async function getStepWithOptions(service: ReturnType<typeof createSupabaseServi
 
   const { data: options } = await service
     .from('flow_step_options')
-    .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal')
+    .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal, next_step_id')
     .eq('step_id', step.id)
     .order('option_order', { ascending: true });
 
@@ -771,7 +771,19 @@ export async function POST(req: Request) {
     return ok({ received: true, terminal_choice_requested: true });
   }
 
-  const nextStep = await getNextStep(service, stepBundle.step.flow_id, stepBundle.step.step_order);
+  let nextStep: StepRow | null = null;
+  if (selectedOption.next_step_id) {
+    const { data: explicitNextStep } = await service
+      .from('flow_steps')
+      .select('id, flow_id, step_order, prompt_text, allow_free_text')
+      .eq('id', selectedOption.next_step_id)
+      .maybeSingle<StepRow>();
+    nextStep = explicitNextStep ?? null;
+  } else {
+    // Backward-compatible fallback for linear flows without explicit branches.
+    nextStep = await getNextStep(service, stepBundle.step.flow_id, stepBundle.step.step_order);
+  }
+
   if (!nextStep) {
     const closeLead = await service
       .from('leads')
@@ -803,7 +815,7 @@ export async function POST(req: Request) {
 
   const { data: nextOptions } = await service
     .from('flow_step_options')
-    .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal')
+    .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal, next_step_id')
     .eq('step_id', nextStep.id)
     .order('option_order', { ascending: true });
 

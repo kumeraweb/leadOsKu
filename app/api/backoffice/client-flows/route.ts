@@ -8,11 +8,13 @@ const optionSchema = z.object({
   label_text: z.string().min(1),
   score_delta: z.number().int().min(-100).max(100).default(0),
   is_contact_human: z.boolean().default(false),
-  is_terminal: z.boolean().default(false)
+  is_terminal: z.boolean().default(false),
+  next_node_key: z.string().min(1).optional().nullable()
 });
 
 const stepSchema = z.object({
   step_order: z.number().int().min(1).max(50),
+  node_key: z.string().min(1),
   prompt_text: z.string().min(1),
   allow_free_text: z.boolean().default(false),
   options: z.array(optionSchema).min(1).max(20)
@@ -66,6 +68,13 @@ export async function POST(req: Request) {
   if (flowError || !flow) return fail(flowError?.message ?? 'Could not create flow', 500);
 
   const orderedSteps = [...body.steps].sort((a, b) => a.step_order - b.step_order);
+  const uniqueNodeKeys = new Set(orderedSteps.map((s) => s.node_key));
+  if (uniqueNodeKeys.size !== orderedSteps.length) {
+    return fail('Duplicate node_key in steps', 400);
+  }
+
+  const stepIdByNodeKey = new Map<string, string>();
+  const optionsByStepId = new Map<string, z.infer<typeof optionSchema>[]>();
 
   for (const step of orderedSteps) {
     const { data: createdStep, error: stepError } = await auth.serviceSupabase
@@ -73,24 +82,39 @@ export async function POST(req: Request) {
       .insert({
         flow_id: flow.id,
         step_order: step.step_order,
+        node_key: step.node_key,
         prompt_text: step.prompt_text,
         allow_free_text: step.allow_free_text
       })
-      .select('id, step_order')
+      .select('id, step_order, node_key')
       .single();
     if (stepError || !createdStep) {
       return fail(stepError?.message ?? 'Could not create flow step', 500);
     }
 
-    const optionsPayload = step.options.map((option) => ({
-      step_id: createdStep.id,
-      option_order: option.option_order,
-      option_code: option.option_code,
-      label_text: option.label_text,
-      score_delta: option.score_delta,
-      is_contact_human: option.is_contact_human,
-      is_terminal: option.is_terminal
-    }));
+    stepIdByNodeKey.set(step.node_key, createdStep.id);
+    optionsByStepId.set(createdStep.id, step.options);
+  }
+
+  for (const [stepId, options] of optionsByStepId.entries()) {
+    const optionsPayload = [];
+    for (const option of options) {
+      const nextStepId = option.next_node_key ? stepIdByNodeKey.get(option.next_node_key) : null;
+      if (option.next_node_key && !nextStepId) {
+        return fail(`Unknown next_node_key: ${option.next_node_key}`, 400);
+      }
+
+      optionsPayload.push({
+        step_id: stepId,
+        option_order: option.option_order,
+        option_code: option.option_code,
+        label_text: option.label_text,
+        score_delta: option.score_delta,
+        is_contact_human: option.is_contact_human,
+        is_terminal: option.is_terminal,
+        next_step_id: nextStepId
+      });
+    }
 
     const { error: optionsError } = await auth.serviceSupabase
       .from('flow_step_options')
@@ -102,4 +126,3 @@ export async function POST(req: Request) {
 
   return ok({ flow }, 201);
 }
-

@@ -6,6 +6,7 @@ export type FlowOption = {
   score_delta: number;
   is_contact_human: boolean;
   is_terminal: boolean;
+  next_step_id?: string | null;
 };
 
 function normalize(input: string): string {
