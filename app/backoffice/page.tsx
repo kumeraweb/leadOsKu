@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
@@ -38,86 +39,6 @@ export default function BackofficePage() {
   const [assignForm, setAssignForm] = useState({
     user_id: '',
     client_id: ''
-  });
-
-  const [flowForm, setFlowForm] = useState({
-    client_id: '',
-    name: 'Flujo comercial base',
-    welcome_message: 'Hola. Soy el asistente de ventas. Te haré unas preguntas rápidas para derivarte con el equipo correcto.',
-    is_active: true,
-    max_steps: 4,
-    max_irrelevant_streak: 2,
-    max_reminders: 2,
-    reminder_delay_minutes: 30,
-    steps_json: JSON.stringify(
-      [
-        {
-          node_key: 'inicio',
-          step_order: 1,
-          prompt_text: '¿Qué tipo de negocio tienes?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'EMPRESA', label_text: 'Soy empresa y quiero contratar', score_delta: 35, is_contact_human: false, is_terminal: false, next_node_key: 'empresa_web' },
-            { option_order: 2, option_code: 'EMPRENDEDOR', label_text: 'Soy emprendedor y quiero contratar', score_delta: 35, is_contact_human: false, is_terminal: false, next_node_key: 'emprendedor_web' },
-            { option_order: 3, option_code: 'APRENDER', label_text: 'Quiero saber qué es Google Ads', score_delta: 10, is_contact_human: false, is_terminal: false, next_node_key: 'explicar_google_ads' },
-            { option_order: 4, option_code: 'PLANES', label_text: 'Quiero conocer los planes', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'mostrar_planes' },
-            { option_order: 5, option_code: 'EJECUTIVA', label_text: 'Contactar ejecutiva', score_delta: 100, is_contact_human: true, is_terminal: false, next_node_key: null }
-          ]
-        },
-        {
-          node_key: 'empresa_web',
-          step_order: 2,
-          prompt_text: 'Perfecto. ¿Tienes sitio web?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'SI_WEB', label_text: 'Sí tengo sitio web', score_delta: 20, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' },
-            { option_order: 2, option_code: 'NO_WEB', label_text: 'No tengo sitio web', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' }
-          ]
-        },
-        {
-          node_key: 'emprendedor_web',
-          step_order: 3,
-          prompt_text: 'Súper, atendemos muchos emprendedores. ¿Tienes sitio web?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'SI_WEB', label_text: 'Sí tengo sitio web', score_delta: 20, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' },
-            { option_order: 2, option_code: 'NO_WEB', label_text: 'No tengo sitio web', score_delta: 15, is_contact_human: false, is_terminal: false, next_node_key: 'contratar_final' }
-          ]
-        },
-        {
-          node_key: 'explicar_google_ads',
-          step_order: 4,
-          prompt_text: 'Google Ads te ayuda a captar clientes con anuncios en búsquedas y mapas. ¿Te gustaría contratar?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
-            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
-          ]
-        },
-        {
-          node_key: 'mostrar_planes',
-          step_order: 5,
-          prompt_text: 'Perfecto. Estos son nuestros planes principales. ¿Te interesa contratar?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
-            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
-          ]
-        },
-        {
-          node_key: 'contratar_final',
-          step_order: 6,
-          prompt_text: '¿Te gustaría hablar con una ejecutiva para evaluar contratación?',
-          allow_free_text: false,
-          options: [
-            { option_order: 1, option_code: 'SI', label_text: 'Sí', score_delta: 40, is_contact_human: true, is_terminal: false, next_node_key: null },
-            { option_order: 2, option_code: 'NO', label_text: 'No', score_delta: 0, is_contact_human: false, is_terminal: true, next_node_key: null }
-          ]
-        }
-      ],
-      null,
-      2
-    )
   });
 
   async function loadClients() {
@@ -174,7 +95,7 @@ export default function BackofficePage() {
       human_forward_number: '',
       score_threshold: 85
     });
-
+    setSuccess('Cliente creado correctamente.');
     await loadClients();
   }
 
@@ -204,6 +125,7 @@ export default function BackofficePage() {
       meta_app_secret: '',
       is_active: true
     });
+    setSuccess('Canal creado correctamente.');
   }
 
   async function onAssign(event: FormEvent) {
@@ -225,54 +147,19 @@ export default function BackofficePage() {
     }
 
     setAssignForm({ user_id: '', client_id: '' });
-  }
-
-  async function onCreateFlow(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-
-    let steps;
-    try {
-      const parsed = JSON.parse(flowForm.steps_json);
-      if (!Array.isArray(parsed)) {
-        setError('steps_json debe ser un array JSON');
-        return;
-      }
-      steps = parsed;
-    } catch {
-      setError('steps_json inválido');
-      return;
-    }
-
-    const response = await fetch('/api/backoffice/client-flows', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: flowForm.client_id,
-        name: flowForm.name,
-        welcome_message: flowForm.welcome_message,
-        is_active: flowForm.is_active,
-        max_steps: flowForm.max_steps,
-        max_irrelevant_streak: flowForm.max_irrelevant_streak,
-        max_reminders: flowForm.max_reminders,
-        reminder_delay_minutes: flowForm.reminder_delay_minutes,
-        steps
-      })
-    });
-
-    const payload = await response.json();
-    if (!response.ok) {
-      setError(payload.error ?? 'No se pudo crear flujo');
-      return;
-    }
-    setSuccess('Flujo creado correctamente');
+    setSuccess('Usuario asignado al tenant correctamente.');
   }
 
   return (
     <main className="col" style={{ gap: 16 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h1>Backoffice</h1>
-        <button className="secondary" onClick={signOut}>Cerrar sesión</button>
+        <div className="row">
+          <Link href="/backoffice/flows/new">
+            <button>Crear flujo determinístico</button>
+          </Link>
+          <button className="secondary" onClick={signOut}>Cerrar sesión</button>
+        </div>
       </div>
 
       {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
@@ -350,73 +237,6 @@ export default function BackofficePage() {
       </div>
 
       <div className="card col">
-        <h2>Crear flujo determinístico</h2>
-        <p style={{ marginTop: 0 }}>
-          Usa <code>node_key</code> en cada step y <code>next_node_key</code> en cada opción para definir ramas.
-          Si una opción debe escalar, marca <code>is_contact_human: true</code>. Si debe terminar, marca <code>is_terminal: true</code>.
-        </p>
-        <form className="col" onSubmit={onCreateFlow}>
-          <input
-            placeholder="client_id"
-            value={flowForm.client_id}
-            onChange={(e) => setFlowForm((v) => ({ ...v, client_id: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="name"
-            value={flowForm.name}
-            onChange={(e) => setFlowForm((v) => ({ ...v, name: e.target.value }))}
-            required
-          />
-          <textarea
-            placeholder="welcome_message"
-            rows={3}
-            value={flowForm.welcome_message}
-            onChange={(e) => setFlowForm((v) => ({ ...v, welcome_message: e.target.value }))}
-            required
-          />
-          <div className="row">
-            <input
-              placeholder="max_steps"
-              type="number"
-              value={flowForm.max_steps}
-              onChange={(e) => setFlowForm((v) => ({ ...v, max_steps: Number(e.target.value) }))}
-              required
-            />
-            <input
-              placeholder="max_irrelevant_streak"
-              type="number"
-              value={flowForm.max_irrelevant_streak}
-              onChange={(e) => setFlowForm((v) => ({ ...v, max_irrelevant_streak: Number(e.target.value) }))}
-              required
-            />
-            <input
-              placeholder="max_reminders"
-              type="number"
-              value={flowForm.max_reminders}
-              onChange={(e) => setFlowForm((v) => ({ ...v, max_reminders: Number(e.target.value) }))}
-              required
-            />
-            <input
-              placeholder="reminder_delay_minutes"
-              type="number"
-              value={flowForm.reminder_delay_minutes}
-              onChange={(e) => setFlowForm((v) => ({ ...v, reminder_delay_minutes: Number(e.target.value) }))}
-              required
-            />
-          </div>
-          <textarea
-            placeholder="steps_json"
-            rows={16}
-            value={flowForm.steps_json}
-            onChange={(e) => setFlowForm((v) => ({ ...v, steps_json: e.target.value }))}
-            required
-          />
-          <button>Crear flujo</button>
-        </form>
-      </div>
-
-      <div className="card col">
         <h2>Asignar usuario a tenant</h2>
         <form className="col" onSubmit={onAssign}>
           <input
@@ -445,6 +265,7 @@ export default function BackofficePage() {
               <th>Email</th>
               <th>Threshold</th>
               <th>Forward</th>
+              <th>Flujo</th>
             </tr>
           </thead>
           <tbody>
@@ -455,6 +276,11 @@ export default function BackofficePage() {
                 <td>{client.notification_email}</td>
                 <td>{client.score_threshold}</td>
                 <td>{client.human_forward_number}</td>
+                <td>
+                  <Link href={`/backoffice/flows/new?clientId=${client.id}`}>
+                    <button className="secondary">Crear flujo</button>
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>
