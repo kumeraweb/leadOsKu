@@ -1,19 +1,13 @@
-const required = [
-  'SUPABASE_URL',
-  'SUPABASE_ANON_KEY',
-  'SUPABASE_SERVICE_ROLE_KEY'
-] as const;
+function getEnv(name: string): string | undefined {
+  return process.env[name];
+}
 
-function getEnv(name: string): string {
+export function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) {
     throw new Error(`Missing environment variable: ${name}`);
   }
   return value;
-}
-
-for (const key of required) {
-  getEnv(key);
 }
 
 export const env = {
