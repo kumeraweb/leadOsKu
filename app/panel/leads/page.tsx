@@ -16,8 +16,7 @@ type LeadRow = {
 };
 
 type TenantInfo = {
-  user_id: string;
-  client_id: string;
+  user_email: string | null;
   client_name: string | null;
 };
 
@@ -73,8 +72,7 @@ export default function PanelLeadsPage() {
       {tenant ? (
         <div className="card col" style={{ gap: 4 }}>
           <strong>{tenant.client_name ?? 'Cliente sin nombre'}</strong>
-          <span><strong>client_id:</strong> <code>{tenant.client_id}</code></span>
-          <span><strong>user_id:</strong> <code>{tenant.user_id}</code></span>
+          {tenant.user_email ? <span>{tenant.user_email}</span> : null}
         </div>
       ) : null}
       <div className="card">

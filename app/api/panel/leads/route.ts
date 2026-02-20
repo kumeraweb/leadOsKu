@@ -53,9 +53,9 @@ export async function GET() {
 
   return ok({
     tenant: {
-      user_id: auth.user.id,
       client_id: auth.clientId,
-      client_name: tenantClient?.name ?? null
+      client_name: tenantClient?.name ?? null,
+      user_email: auth.user.email ?? null
     },
     leads: ordered
   });
