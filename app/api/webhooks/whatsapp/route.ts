@@ -359,47 +359,6 @@ export async function POST(req: Request) {
   }
 
   if (leadJustCreated) {
-    const firstDefensiveMap = await mapTextToOptionDefensively({
-      messageText: parsed.text,
-      businessName: client.name,
-      stepPrompt: stepBundle.step.prompt_text,
-      options: stepBundle.options.map((o) => ({ option_code: o.option_code, label_text: o.label_text }))
-    });
-
-    if (firstDefensiveMap.out_of_scope && !firstDefensiveMap.mapped_option_code) {
-      const updateLead = await service
-        .from('leads')
-        .update({
-          irrelevant_streak: 1,
-          free_text_summary: firstDefensiveMap.summary,
-          last_user_message_at: new Date().toISOString(),
-          next_reminder_at: addMinutesIso(new Date(), Number(flowBundle.flow.reminder_delay_minutes))
-        })
-        .eq('id', lead.id);
-      if (updateLead.error) {
-        return fail(updateLead.error.message, 500);
-      }
-
-      try {
-        await sendBotMessage({
-          service,
-          clientId: client.id,
-          leadId: lead.id,
-          phoneNumberId: parsed.phoneNumberId,
-          waUserId: parsed.waUserId,
-          accessTokenEnc: channel.meta_access_token_enc,
-          text: formatOutOfScopeMessage(stepBundle.step.prompt_text, stepBundle.options)
-        });
-      } catch (error) {
-        return fail(
-          error instanceof Error ? error.message : 'Could not send first out-of-scope message',
-          500
-        );
-      }
-
-      return ok({ received: true, started: true, out_of_scope: true });
-    }
-
     try {
       await sendBotMessage({
         service,
