@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { ok, fail } from '@/lib/domain/http';
@@ -114,6 +115,12 @@ type StepRow = {
   allow_free_text: boolean;
 };
 
+const REOPEN_COOLDOWN_SECONDS = Number(process.env.LEAD_REOPEN_COOLDOWN_SECONDS ?? 180);
+const INBOUND_RATE_WINDOW_SECONDS = Number(process.env.WEBHOOK_RATE_LIMIT_WINDOW_SECONDS ?? 60);
+const INBOUND_RATE_MAX_MESSAGES = Number(process.env.WEBHOOK_RATE_LIMIT_MAX_MESSAGES ?? 10);
+const LEAD_MAX_BOT_TURNS = Number(process.env.LEAD_MAX_BOT_TURNS ?? 40);
+const LEAD_MAX_SAME_STEP_EVENTS = Number(process.env.LEAD_MAX_SAME_STEP_EVENTS ?? 8);
+
 function parsePayload(payload: unknown): ParsedPayload | null {
   const parsed = webhookSchema.safeParse(payload);
   if (!parsed.success) return null;
@@ -131,6 +138,26 @@ function parsePayload(payload: unknown): ParsedPayload | null {
   }
 
   return { phoneNumberId, waUserId, text, waMessageId, waProfileName, rawPayload: payload };
+}
+
+function isValidMetaSignature(params: {
+  rawBody: string;
+  appSecret: string;
+  signatureHeader: string | null;
+}): boolean {
+  const signature = params.signatureHeader?.trim();
+  if (!signature || !signature.startsWith('sha256=')) return false;
+
+  const expectedHex = crypto
+    .createHmac('sha256', params.appSecret)
+    .update(params.rawBody, 'utf8')
+    .digest('hex');
+  const incomingHex = signature.slice('sha256='.length);
+
+  const expected = Buffer.from(expectedHex, 'hex');
+  const incoming = Buffer.from(incomingHex, 'hex');
+  if (expected.length !== incoming.length) return false;
+  return crypto.timingSafeEqual(expected, incoming);
 }
 
 function addMinutesIso(base: Date, minutes: number): string {
@@ -240,7 +267,13 @@ async function getNextStep(service: ReturnType<typeof createSupabaseServiceClien
 }
 
 export async function POST(req: Request) {
-  const payload = await req.json().catch(() => null);
+  const rawBody = await req.text();
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(rawBody || '{}');
+  } catch {
+    return ok({ received: true, ignored: true, reason: 'invalid_json' });
+  }
   const parsed = parsePayload(payload);
   if (!parsed) {
     return ok({ received: true, ignored: true });
@@ -250,13 +283,24 @@ export async function POST(req: Request) {
 
   const { data: channel } = await service
     .from('client_channels')
-    .select('client_id, phone_number_id, is_active, meta_access_token_enc')
+    .select('client_id, phone_number_id, is_active, meta_access_token_enc, meta_app_secret_enc')
     .eq('phone_number_id', parsed.phoneNumberId)
     .eq('is_active', true)
     .maybeSingle();
 
   if (!channel) {
     return ok({ received: true, ignored: true });
+  }
+
+  const signatureHeader = req.headers.get('x-hub-signature-256');
+  let appSecret: string;
+  try {
+    appSecret = decryptSecret(channel.meta_app_secret_enc);
+  } catch {
+    return fail('Invalid channel app secret encryption', 500);
+  }
+  if (!isValidMetaSignature({ rawBody, appSecret, signatureHeader })) {
+    return fail('Invalid webhook signature', 401);
   }
 
   const { data: client } = await service
@@ -284,6 +328,22 @@ export async function POST(req: Request) {
   let leadJustCreated = false;
 
   if (!lead) {
+    const cooldownCutoff = new Date(Date.now() - REOPEN_COOLDOWN_SECONDS * 1000).toISOString();
+    const { data: recentClosedLead } = await service
+      .from('leads')
+      .select('id, closed_at')
+      .eq('client_id', client.id)
+      .eq('wa_user_id', parsed.waUserId)
+      .eq('conversation_status', 'CLOSED')
+      .not('closed_at', 'is', null)
+      .gt('closed_at', cooldownCutoff)
+      .order('closed_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentClosedLead) {
+      return ok({ received: true, ignored: true, reason: 'reopen_cooldown' });
+    }
+
     const flowBundle = await getActiveFlowBundle(service, client.id);
     if (!flowBundle) {
       return ok({ received: true, ignored: true, reason: 'no_active_flow' });
@@ -316,6 +376,18 @@ export async function POST(req: Request) {
 
     lead = createdLead;
     leadJustCreated = true;
+  }
+
+  const inboundWindowCutoff = new Date(Date.now() - INBOUND_RATE_WINDOW_SECONDS * 1000).toISOString();
+  const { count: recentInboundCount } = await service
+    .from('messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('client_id', client.id)
+    .eq('lead_id', lead.id)
+    .eq('direction', 'INBOUND')
+    .gt('created_at', inboundWindowCutoff);
+  if ((recentInboundCount ?? 0) >= INBOUND_RATE_MAX_MESSAGES) {
+    return ok({ received: true, ignored: true, reason: 'rate_limited' });
   }
 
   const inboundInsert = await service.from('messages').insert({
@@ -403,6 +475,78 @@ export async function POST(req: Request) {
     }
 
     return ok({ received: true, started: true });
+  }
+
+  const [{ count: outboundTurnsCount }, { count: sameStepEventsCount }] = await Promise.all([
+    service
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id)
+      .eq('lead_id', lead.id)
+      .eq('direction', 'OUTBOUND'),
+    service
+      .from('lead_step_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('client_id', client.id)
+      .eq('lead_id', lead.id)
+      .eq('step_id', stepBundle.step.id)
+  ]);
+  if (
+    (outboundTurnsCount ?? 0) >= LEAD_MAX_BOT_TURNS ||
+    (sameStepEventsCount ?? 0) >= LEAD_MAX_SAME_STEP_EVENTS
+  ) {
+    const shouldNotify = !lead.notified_at;
+    const reason =
+      (outboundTurnsCount ?? 0) >= LEAD_MAX_BOT_TURNS
+        ? 'SAFETY_MAX_BOT_TURNS'
+        : 'SAFETY_SAME_STEP_LOOP';
+    const escalateLead = await service
+      .from('leads')
+      .update({
+        conversation_status: 'HUMAN_REQUIRED',
+        human_required_reason: reason,
+        notified_at: shouldNotify ? new Date().toISOString() : lead.notified_at,
+        next_reminder_at: null
+      })
+      .eq('id', lead.id);
+    if (escalateLead.error) {
+      return fail(escalateLead.error.message, 500);
+    }
+
+    const handoffText = client.human_forward_number
+      ? `Gracias. Te derivaré con un ejecutivo. También puedes escribir a ${client.human_forward_number}.`
+      : 'Gracias. Te derivaré con un ejecutivo del equipo.';
+
+    try {
+      await sendBotMessage({
+        service,
+        clientId: client.id,
+        leadId: lead.id,
+        phoneNumberId: parsed.phoneNumberId,
+        waUserId: parsed.waUserId,
+        accessTokenEnc: channel.meta_access_token_enc,
+        text: handoffText
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : 'Could not send safety handoff', 500);
+    }
+
+    if (shouldNotify) {
+      const emailResult = await sendLeadNotificationEmail({
+        to: client.notification_email,
+        subject: 'LeadOS: Lead requiere intervención humana',
+        html: `<p>Lead: ${parsed.waProfileName ?? parsed.waUserId}</p><p>Score: ${lead.score}</p><p>Razón: ${reason}</p>`
+      });
+      if (!emailResult.sent) {
+        console.error('Lead notification email failed', {
+          leadId: lead.id,
+          clientId: client.id,
+          reason: emailResult.reason
+        });
+      }
+    }
+
+    return ok({ received: true, safety_escalation: true });
   }
 
   if (waitingTerminalChoice) {

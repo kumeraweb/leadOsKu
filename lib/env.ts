@@ -19,5 +19,7 @@ export const env = {
   notificationFromEmail: process.env.NOTIFICATION_FROM_EMAIL ?? 'hola@tractiva.cl',
   openAiApiKey: process.env.OPENAI_API_KEY,
   metaApiBaseUrl: process.env.META_API_BASE_URL ?? 'https://graph.facebook.com/v20.0',
-  resendApiKey: process.env.RESEND_API_KEY
+  resendApiKey: process.env.RESEND_API_KEY,
+  internalCronSecret: process.env.INTERNAL_CRON_SECRET,
+  cronSecret: process.env.CRON_SECRET
 };
