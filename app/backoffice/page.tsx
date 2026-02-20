@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { Users, Plus, Radio, UserPlus, LogOut, GitBranch, Mail, Phone, Gauge } from 'lucide-react';
 
 type Client = {
   id: string;
@@ -151,141 +152,221 @@ export default function BackofficePage() {
   }
 
   return (
-    <main className="col" style={{ gap: 16 }}>
-      <div className="row" style={{ justifyContent: 'space-between' }}>
+    <div className="admin-page">
+      <div className="admin-header">
         <h1>Backoffice</h1>
-        <div className="row">
+        <div className="admin-row">
           <Link href="/backoffice/flows/new">
-            <button>Crear flujo determinístico</button>
+            <button className="btn btn-primary btn-sm">
+              <GitBranch size={14} />
+              Crear flujo
+            </button>
           </Link>
-          <button className="secondary" onClick={signOut}>Cerrar sesión</button>
+          <button className="btn btn-secondary btn-sm" onClick={signOut}>
+            <LogOut size={14} />
+            Salir
+          </button>
         </div>
       </div>
 
-      {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
-      {success ? <p style={{ color: '#065f46' }}>{success}</p> : null}
+      <div className="admin-body">
+        {error ? <div className="toast toast-error">{error}</div> : null}
+        {success ? <div className="toast toast-success">{success}</div> : null}
 
-      <div className="card col">
-        <h2>Crear cliente</h2>
-        <form className="col" onSubmit={onCreateClient}>
-          <input
-            placeholder="name"
-            value={clientForm.name}
-            onChange={(e) => setClientForm((v) => ({ ...v, name: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="notification_email"
-            type="email"
-            value={clientForm.notification_email}
-            onChange={(e) => setClientForm((v) => ({ ...v, notification_email: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="human_forward_number"
-            value={clientForm.human_forward_number}
-            onChange={(e) => setClientForm((v) => ({ ...v, human_forward_number: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="score_threshold"
-            type="number"
-            min={0}
-            max={100}
-            value={clientForm.score_threshold}
-            onChange={(e) => setClientForm((v) => ({ ...v, score_threshold: Number(e.target.value) }))}
-            required
-          />
-          <button>Crear cliente</button>
-        </form>
-      </div>
+        {/* ─── Crear cliente ─── */}
+        <div className="admin-card">
+          <h2><Plus size={18} /> Crear cliente</h2>
+          <form className="admin-form" onSubmit={onCreateClient}>
+            <div className="admin-row">
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Nombre</label>
+                <input
+                  className="admin-input"
+                  placeholder="Nombre del cliente"
+                  value={clientForm.name}
+                  onChange={(e) => setClientForm((v) => ({ ...v, name: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Email notificación</label>
+                <input
+                  className="admin-input"
+                  placeholder="email@empresa.com"
+                  type="email"
+                  value={clientForm.notification_email}
+                  onChange={(e) => setClientForm((v) => ({ ...v, notification_email: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+            <div className="admin-row">
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Nº forward humano</label>
+                <input
+                  className="admin-input"
+                  placeholder="+56912345678"
+                  value={clientForm.human_forward_number}
+                  onChange={(e) => setClientForm((v) => ({ ...v, human_forward_number: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Score threshold</label>
+                <input
+                  className="admin-input"
+                  placeholder="85"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={clientForm.score_threshold}
+                  onChange={(e) => setClientForm((v) => ({ ...v, score_threshold: Number(e.target.value) }))}
+                  required
+                />
+              </div>
+            </div>
+            <button className="btn btn-primary">
+              <Plus size={14} />
+              Crear cliente
+            </button>
+          </form>
+        </div>
 
-      <div className="card col">
-        <h2>Crear canal</h2>
-        <form className="col" onSubmit={onCreateChannel}>
-          <input
-            placeholder="client_id"
-            value={channelForm.client_id}
-            onChange={(e) => setChannelForm((v) => ({ ...v, client_id: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="phone_number_id"
-            value={channelForm.phone_number_id}
-            onChange={(e) => setChannelForm((v) => ({ ...v, phone_number_id: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="waba_id (optional)"
-            value={channelForm.waba_id}
-            onChange={(e) => setChannelForm((v) => ({ ...v, waba_id: e.target.value }))}
-          />
-          <input
-            placeholder="meta_access_token"
-            value={channelForm.meta_access_token}
-            onChange={(e) => setChannelForm((v) => ({ ...v, meta_access_token: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="meta_app_secret"
-            value={channelForm.meta_app_secret}
-            onChange={(e) => setChannelForm((v) => ({ ...v, meta_app_secret: e.target.value }))}
-            required
-          />
-          <button>Crear canal</button>
-        </form>
-      </div>
+        {/* ─── Crear canal ─── */}
+        <div className="admin-card">
+          <h2><Radio size={18} /> Crear canal</h2>
+          <form className="admin-form" onSubmit={onCreateChannel}>
+            <div className="admin-row">
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Client ID</label>
+                <input
+                  className="admin-input"
+                  placeholder="client_id"
+                  value={channelForm.client_id}
+                  onChange={(e) => setChannelForm((v) => ({ ...v, client_id: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Phone Number ID</label>
+                <input
+                  className="admin-input"
+                  placeholder="phone_number_id"
+                  value={channelForm.phone_number_id}
+                  onChange={(e) => setChannelForm((v) => ({ ...v, phone_number_id: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+            <div className="admin-field">
+              <label>WABA ID (opcional)</label>
+              <input
+                className="admin-input"
+                placeholder="waba_id"
+                value={channelForm.waba_id}
+                onChange={(e) => setChannelForm((v) => ({ ...v, waba_id: e.target.value }))}
+              />
+            </div>
+            <div className="admin-row">
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Meta Access Token</label>
+                <input
+                  className="admin-input"
+                  placeholder="meta_access_token"
+                  value={channelForm.meta_access_token}
+                  onChange={(e) => setChannelForm((v) => ({ ...v, meta_access_token: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Meta App Secret</label>
+                <input
+                  className="admin-input"
+                  placeholder="meta_app_secret"
+                  value={channelForm.meta_app_secret}
+                  onChange={(e) => setChannelForm((v) => ({ ...v, meta_app_secret: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+            <button className="btn btn-primary">
+              <Plus size={14} />
+              Crear canal
+            </button>
+          </form>
+        </div>
 
-      <div className="card col">
-        <h2>Asignar usuario a tenant</h2>
-        <form className="col" onSubmit={onAssign}>
-          <input
-            placeholder="user_id (auth.users.id)"
-            value={assignForm.user_id}
-            onChange={(e) => setAssignForm((v) => ({ ...v, user_id: e.target.value }))}
-            required
-          />
-          <input
-            placeholder="client_id"
-            value={assignForm.client_id}
-            onChange={(e) => setAssignForm((v) => ({ ...v, client_id: e.target.value }))}
-            required
-          />
-          <button>Asignar</button>
-        </form>
-      </div>
+        {/* ─── Asignar usuario ─── */}
+        <div className="admin-card">
+          <h2><UserPlus size={18} /> Asignar usuario a tenant</h2>
+          <form className="admin-form" onSubmit={onAssign}>
+            <div className="admin-row">
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>User ID (auth.users.id)</label>
+                <input
+                  className="admin-input"
+                  placeholder="user_id"
+                  value={assignForm.user_id}
+                  onChange={(e) => setAssignForm((v) => ({ ...v, user_id: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="admin-field" style={{ flex: 1 }}>
+                <label>Client ID</label>
+                <input
+                  className="admin-input"
+                  placeholder="client_id"
+                  value={assignForm.client_id}
+                  onChange={(e) => setAssignForm((v) => ({ ...v, client_id: e.target.value }))}
+                  required
+                />
+              </div>
+            </div>
+            <button className="btn btn-primary">
+              <UserPlus size={14} />
+              Asignar
+            </button>
+          </form>
+        </div>
 
-      <div className="card col">
-        <h2>Clientes</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Threshold</th>
-              <th>Forward</th>
-              <th>Flujo</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((client) => (
-              <tr key={client.id}>
-                <td><code>{client.id}</code></td>
-                <td>{client.name}</td>
-                <td>{client.notification_email}</td>
-                <td>{client.score_threshold}</td>
-                <td>{client.human_forward_number}</td>
-                <td>
-                  <Link href={`/backoffice/flows/new?clientId=${client.id}`}>
-                    <button className="secondary">Crear flujo</button>
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* ─── Tabla de clientes ─── */}
+        <div className="admin-card">
+          <h2><Users size={18} /> Clientes</h2>
+          <div className="admin-table-wrap">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Nombre</th>
+                  <th><Mail size={12} style={{ verticalAlign: 'middle' }} /> Email</th>
+                  <th><Gauge size={12} style={{ verticalAlign: 'middle' }} /> Threshold</th>
+                  <th><Phone size={12} style={{ verticalAlign: 'middle' }} /> Forward</th>
+                  <th>Flujo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clients.map((client) => (
+                  <tr key={client.id}>
+                    <td><code>{client.id}</code></td>
+                    <td style={{ fontWeight: 600 }}>{client.name}</td>
+                    <td>{client.notification_email}</td>
+                    <td>{client.score_threshold}</td>
+                    <td>{client.human_forward_number}</td>
+                    <td>
+                      <Link href={`/backoffice/flows/new?clientId=${client.id}`}>
+                        <button className="btn btn-secondary btn-sm">
+                          <GitBranch size={12} />
+                          Crear flujo
+                        </button>
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

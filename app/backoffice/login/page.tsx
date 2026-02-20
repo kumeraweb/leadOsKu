@@ -3,6 +3,7 @@
 import { FormEvent, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { Lock } from 'lucide-react';
 
 export default function BackofficeLoginPage() {
   const router = useRouter();
@@ -30,25 +31,50 @@ export default function BackofficeLoginPage() {
   }
 
   return (
-    <main className="col" style={{ maxWidth: 420 }}>
-      <h1>Backoffice Login</h1>
-      <form className="card col" onSubmit={onSubmit}>
-        <label className="col">
-          Email
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </label>
-        <label className="col">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </label>
-        {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
-        <button disabled={loading}>{loading ? 'Ingresando...' : 'Ingresar'}</button>
-      </form>
-    </main>
+    <div className="login-page">
+      <div className="login-card animate-fade-in-up">
+        <div className="login-logo">
+          <div className="logo-icon" style={{ background: 'linear-gradient(135deg, #374151 0%, #111827 100%)' }}>L</div>
+          <span style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.03em' }}>leadOsKu</span>
+        </div>
+        <h1>Backoffice</h1>
+        <p className="login-subtitle">Administración interna del sistema</p>
+        <form onSubmit={onSubmit}>
+          <div className="login-field">
+            <label>Email</label>
+            <input
+              className="login-input"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@leadosku.com"
+              required
+            />
+          </div>
+          <div className="login-field">
+            <label>Contraseña</label>
+            <input
+              className="login-input"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          {error ? <div className="login-error">{error}</div> : null}
+          <button className="login-btn" disabled={loading} style={{ marginTop: 8, background: 'linear-gradient(135deg, #374151, #111827)' }}>
+            {loading ? (
+              'Ingresando...'
+            ) : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Lock size={16} />
+                Ingresar
+              </span>
+            )}
+          </button>
+        </form>
+      </div>
+    </div>
   );
 }
