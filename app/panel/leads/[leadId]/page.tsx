@@ -115,99 +115,190 @@ export default function LeadConversationPage() {
   }
 
   return (
-    <div className="admin-page" style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      {/* Header */}
-      <div className="admin-header">
-        <div className="admin-row">
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100dvh',
+      background: '#1a1a2e', color: '#e5e7eb'
+    }}>
+      {/* ─── Compact Top Bar ─── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 12px', background: '#111827',
+        borderBottom: '1px solid #1f2937', flexShrink: 0
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Link href="/panel/leads">
-            <button className="btn btn-secondary btn-sm">
-              <ArrowLeft size={14} />
+            <button style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '6px 10px', borderRadius: 6,
+              background: 'transparent', border: '1px solid #374151',
+              color: '#9ca3af', fontSize: 12, fontWeight: 600, cursor: 'pointer'
+            }}>
+              <ArrowLeft size={13} />
               Volver
             </button>
           </Link>
-          <h1>Conversación</h1>
+          {lead ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#f3f4f6' }}>
+                {lead.wa_profile_name ?? 'Sin nombre'}
+              </span>
+              <span style={{ fontSize: 11, color: '#6b7280', fontFamily: 'monospace' }}>
+                {lead.wa_user_id}
+              </span>
+            </div>
+          ) : (
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#f3f4f6' }}>Conversación</span>
+          )}
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={signOut}>
-          <LogOut size={14} />
-          Salir
+        <button
+          onClick={signOut}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 4,
+            padding: '6px 10px', borderRadius: 6,
+            background: 'transparent', border: '1px solid #374151',
+            color: '#9ca3af', fontSize: 12, fontWeight: 600, cursor: 'pointer'
+          }}
+        >
+          <LogOut size={13} />
         </button>
       </div>
 
-      {/* Body */}
-      <div style={{ flex: 1, overflow: 'auto', maxWidth: 800, width: '100%', margin: '0 auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {loading ? <p style={{ fontSize: 14, color: 'var(--admin-text-secondary)' }}>Cargando...</p> : null}
-        {error ? <div className="toast toast-error">{error}</div> : null}
+      {/* ─── Lead Info Strip ─── */}
+      {lead ? (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '6px 12px', background: '#111827',
+          borderBottom: '1px solid #1f2937', flexShrink: 0,
+          flexWrap: 'wrap', gap: 8
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span className={`badge ${lead.conversation_status}`} style={{ fontSize: 10 }}>
+              {lead.conversation_status}
+            </span>
+            <span style={{ fontSize: 12, color: '#9ca3af' }}>
+              Score: <strong style={{ color: '#f3f4f6' }}>{lead.score}</strong>
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={onTake}
+              disabled={lead.conversation_status !== 'HUMAN_REQUIRED'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: lead.conversation_status === 'HUMAN_REQUIRED' ? '#3b82f6' : '#1f2937',
+                border: 'none',
+                color: lead.conversation_status === 'HUMAN_REQUIRED' ? 'white' : '#4b5563',
+                cursor: lead.conversation_status === 'HUMAN_REQUIRED' ? 'pointer' : 'not-allowed'
+              }}
+            >
+              <UserCheck size={12} />
+              Tomar
+            </button>
+            <button
+              onClick={onCloseLead}
+              disabled={lead.conversation_status === 'CLOSED'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                background: 'transparent', border: '1px solid #374151',
+                color: lead.conversation_status === 'CLOSED' ? '#4b5563' : '#9ca3af',
+                cursor: lead.conversation_status === 'CLOSED' ? 'not-allowed' : 'pointer'
+              }}
+            >
+              <XCircle size={12} />
+              Cerrar
+            </button>
+          </div>
+        </div>
+      ) : null}
 
-        {lead ? (
-          <>
-            {/* Lead Info Card */}
-            <div className="admin-card" style={{ padding: '14px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                <div>
-                  <strong style={{ fontSize: 15 }}>{lead.wa_profile_name ?? 'Sin nombre'}</strong>
-                  <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--admin-text-secondary)', fontFamily: 'monospace' }}>{lead.wa_user_id}</p>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span className={`badge ${lead.conversation_status}`}>{lead.conversation_status}</span>
-                  <div className="score-badge">
-                    <span style={{ fontSize: 12, color: 'var(--admin-text-secondary)', fontWeight: 500 }}>Score:</span>
-                    {lead.score}
-                    <span className="score-bar">
-                      <span className="score-fill" style={{ width: `${Math.min(lead.score, 100)}%` }} />
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="admin-row" style={{ marginTop: 12 }}>
-                <button className="btn btn-primary btn-sm" onClick={onTake} disabled={lead.conversation_status !== 'HUMAN_REQUIRED'}>
-                  <UserCheck size={14} />
-                  Tomar conversación
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={onCloseLead} disabled={lead.conversation_status === 'CLOSED'}>
-                  <XCircle size={14} />
-                  Cerrar
-                </button>
+      {/* ─── Loading / Error ─── */}
+      {loading ? (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 14, color: '#6b7280' }}>Cargando...</span>
+        </div>
+      ) : null}
+      {error ? (
+        <div style={{ margin: '8px 12px', padding: '8px 12px', borderRadius: 6, background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.3)', color: '#fca5a5', fontSize: 13 }}>
+          {error}
+        </div>
+      ) : null}
+
+      {/* ─── Chat Messages Area ─── */}
+      {lead && !loading ? (
+        <div style={{
+          flex: 1, overflow: 'auto', padding: '12px',
+          display: 'flex', flexDirection: 'column', gap: 6,
+          background: '#0f0f23'
+        }}>
+          {messages.length === 0 ? (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: 13, color: '#4b5563' }}>Sin mensajes aún</span>
+            </div>
+          ) : null}
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              style={{
+                alignSelf: message.direction === 'INBOUND' ? 'flex-start' : 'flex-end',
+                maxWidth: '82%',
+                padding: '10px 14px',
+                borderRadius: message.direction === 'INBOUND' ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                background: message.direction === 'INBOUND' ? '#1f2937' : '#1d4ed8',
+                color: message.direction === 'INBOUND' ? '#e5e7eb' : '#f0f4ff',
+                fontSize: 14, lineHeight: 1.5
+              }}
+            >
+              <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{message.text_content}</div>
+              <div style={{
+                fontSize: 10, marginTop: 4,
+                color: message.direction === 'INBOUND' ? '#6b7280' : 'rgba(255,255,255,0.45)',
+                textAlign: message.direction === 'INBOUND' ? 'left' : 'right'
+              }}>
+                {message.direction === 'INBOUND' ? 'Lead' : 'Bot/Agente'}
               </div>
             </div>
+          ))}
+        </div>
+      ) : null}
 
-            {/* Chat Messages */}
-            <div className="admin-card" style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-              <div className="chat-container" style={{ flex: 1 }}>
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`chat-bubble ${message.direction === 'INBOUND' ? 'chat-bubble-in' : 'chat-bubble-out'}`}
-                  >
-                    <div>{message.text_content}</div>
-                    <div className="chat-meta">
-                      {message.direction === 'INBOUND' ? 'Lead' : 'Bot/Agente'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Send Message */}
-            <div className="admin-card" style={{ padding: '12px 16px' }}>
-              <form onSubmit={onSend}>
-                <div className="chat-input-wrap">
-                  <textarea
-                    className="admin-input"
-                    rows={2}
-                    placeholder="Escribe un mensaje..."
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    style={{ resize: 'none' }}
-                  />
-                  <button className="btn btn-primary" style={{ padding: '10px 16px', alignSelf: 'stretch' }}>
-                    <Send size={16} />
-                  </button>
-                </div>
-              </form>
-            </div>
-          </>
-        ) : null}
-      </div>
+      {/* ─── Message Input ─── */}
+      {lead && !loading ? (
+        <div style={{
+          padding: '8px 12px', background: '#111827',
+          borderTop: '1px solid #1f2937', flexShrink: 0
+        }}>
+          <form onSubmit={onSend} style={{
+            display: 'flex', alignItems: 'center', gap: 8
+          }}>
+            <input
+              type="text"
+              placeholder="Escribe un mensaje..."
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+              style={{
+                flex: 1, padding: '10px 14px', borderRadius: 8,
+                background: '#1f2937', border: '1px solid #374151',
+                color: '#f3f4f6', fontSize: 14,
+                outline: 'none', fontFamily: 'inherit'
+              }}
+            />
+            <button
+              type="submit"
+              style={{
+                width: 40, height: 40, borderRadius: 8,
+                background: '#3b82f6', border: 'none',
+                color: 'white', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0
+              }}
+            >
+              <Send size={16} />
+            </button>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }
