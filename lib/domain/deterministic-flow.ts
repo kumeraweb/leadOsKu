@@ -16,20 +16,35 @@ function normalize(input: string): string {
     .trim();
 }
 
-export function renderStepPrompt(promptText: string, options: FlowOption[]): string {
-  const lines = [promptText];
-  for (const option of options) {
-    lines.push(`${option.option_order}) ${option.label_text}`);
+function promptAlreadyContainsOptions(promptText: string, options: FlowOption[]): boolean {
+  const normalizedPrompt = normalize(promptText);
+  if (/\n\s*1\)/.test(promptText) || /^\s*1\)/.test(promptText)) {
+    return true;
   }
-  return lines.join('\n');
+
+  return options.some((option) => normalizedPrompt.includes(normalize(option.label_text)));
+}
+
+export function renderOptionsList(options: FlowOption[]): string {
+  return options.map((option) => `${option.option_order}) ${option.label_text}`).join('\n');
+}
+
+export function renderStepPrompt(promptText: string, options: FlowOption[]): string {
+  if (promptAlreadyContainsOptions(promptText, options)) {
+    return promptText;
+  }
+
+  return [promptText, renderOptionsList(options)].join('\n');
 }
 
 export function formatOutOfScopeMessage(promptText: string, options: FlowOption[]): string {
+  if (options.length === 0) {
+    return 'Puedo ayudarte solo con los servicios disponibles de Tractiva.';
+  }
+
   return [
-    'Puedo ayudarte solo con las opciones del servicio disponible.',
-    'Por favor responde con el número de una opción:',
-    '',
-    renderStepPrompt(promptText, options)
+    'Puedo ayudarte solo con servicios de Google Ads.',
+    "Si quieres ver las opciones válidas, responde: OPCIONES."
   ].join('\n');
 }
 
@@ -65,3 +80,13 @@ export function clampScore(score: number): number {
   return score;
 }
 
+export function wantsOptionsList(input: string): boolean {
+  const text = normalize(input);
+  return (
+    text === 'opciones' ||
+    text === 'si' ||
+    text === 'sí' ||
+    text.includes('mostrar opciones') ||
+    text.includes('ver opciones')
+  );
+}
