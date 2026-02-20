@@ -15,40 +15,45 @@ type LeadRow = {
   last_message: string;
 };
 
+type TenantInfo = {
+  user_id: string;
+  client_id: string;
+  client_name: string | null;
+};
+
 export default function PanelLeadsPage() {
   const router = useRouter();
   const supabase = useMemo(() => createSupabaseBrowserClient(), []);
   const [leads, setLeads] = useState<LeadRow[]>([]);
+  const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
+  async function loadLeads() {
+    setLoading(true);
+    setError(null);
 
-    async function run() {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.push('/panel/login');
-        return;
-      }
-
-      const response = await fetch('/api/panel/leads', { cache: 'no-store' });
-      const payload = await response.json();
-
-      if (!active) return;
-
-      if (!response.ok) {
-        setError(payload.error ?? 'No se pudo cargar leads');
-      } else {
-        setLeads(payload.leads ?? []);
-      }
-      setLoading(false);
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      router.push('/panel/login');
+      return;
     }
 
-    run();
-    return () => {
-      active = false;
-    };
+    const response = await fetch('/api/panel/leads', { cache: 'no-store' });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setError(payload.error ?? 'No se pudo cargar leads');
+    } else {
+      setLeads(payload.leads ?? []);
+      setTenant(payload.tenant ?? null);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadLeads();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, supabase]);
 
   async function signOut() {
@@ -60,8 +65,18 @@ export default function PanelLeadsPage() {
     <main className="col" style={{ gap: 16 }}>
       <div className="row" style={{ justifyContent: 'space-between' }}>
         <h1>Leads</h1>
-        <button className="secondary" onClick={signOut}>Cerrar sesión</button>
+        <div className="row">
+          <button className="secondary" onClick={loadLeads}>Refrescar</button>
+          <button className="secondary" onClick={signOut}>Cerrar sesión</button>
+        </div>
       </div>
+      {tenant ? (
+        <div className="card col" style={{ gap: 4 }}>
+          <strong>{tenant.client_name ?? 'Cliente sin nombre'}</strong>
+          <span><strong>client_id:</strong> <code>{tenant.client_id}</code></span>
+          <span><strong>user_id:</strong> <code>{tenant.user_id}</code></span>
+        </div>
+      ) : null}
       <div className="card">
         {loading ? <p>Cargando...</p> : null}
         {error ? <p style={{ color: '#b91c1c' }}>{error}</p> : null}
@@ -96,6 +111,9 @@ export default function PanelLeadsPage() {
               ))}
             </tbody>
           </table>
+        ) : null}
+        {!loading && !error && leads.length === 0 ? (
+          <p style={{ marginTop: 12 }}>Sin leads visibles para este tenant. Revisa mapping en <code>user_clients</code> y políticas RLS.</p>
         ) : null}
       </div>
     </main>

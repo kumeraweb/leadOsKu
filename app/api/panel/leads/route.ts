@@ -9,6 +9,12 @@ export async function GET() {
     return fail(auth.error, auth.status);
   }
 
+  const { data: tenantClient } = await auth.supabase
+    .from('clients')
+    .select('id, name')
+    .eq('id', auth.clientId)
+    .maybeSingle();
+
   const { data: leads, error } = await auth.supabase
     .from('leads')
     .select('id, wa_profile_name, wa_user_id, conversation_status, score, updated_at, last_user_message_at, last_bot_message_at')
@@ -45,5 +51,12 @@ export async function GET() {
         statusOrder.indexOf(a.conversation_status) - statusOrder.indexOf(b.conversation_status)
     );
 
-  return ok({ leads: ordered });
+  return ok({
+    tenant: {
+      user_id: auth.user.id,
+      client_id: auth.clientId,
+      client_name: tenantClient?.name ?? null
+    },
+    leads: ordered
+  });
 }
