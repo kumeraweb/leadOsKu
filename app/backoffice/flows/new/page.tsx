@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
-import { ArrowLeft, Plus, Trash2, GitBranch, Settings, Link2, User, XCircle, Code2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, GitBranch, Settings, Link2, Code2 } from 'lucide-react';
 
 type BuilderOption = {
   id: string;
@@ -156,24 +156,14 @@ export default function BackofficeFlowBuilderPage() {
         node_key: key,
         prompt_text: '',
         allow_free_text: false,
-        options: [
-          {
-            id: makeId(),
-            label_text: '',
-            score_delta: 0,
-            next_type: 'terminal',
-            next_node_key: ''
-          }
-        ]
+        options: [{ id: makeId(), label_text: '', score_delta: 0, next_type: 'terminal', next_node_key: '' }]
       };
 
       const next = [...prev];
       next[parentIndex] = {
         ...parentNode,
         options: parentNode.options.map((option) =>
-          option.id === optionId
-            ? { ...option, next_type: 'node', next_node_key: key }
-            : option
+          option.id === optionId ? { ...option, next_type: 'node', next_node_key: key } : option
         )
       };
       next.splice(parentIndex + 1, 0, subnode);
@@ -228,41 +218,17 @@ export default function BackofficeFlowBuilderPage() {
 
     const nodeKeys = new Set<string>();
     for (const node of nodes) {
-      if (!node.node_key.trim()) {
-        setError('Todos los nodos deben tener node_key');
-        setSubmitting(false);
-        return;
-      }
-      if (!node.prompt_text.trim()) {
-        setError(`El nodo "${node.node_key}" no tiene pregunta/mensaje.`);
-        setSubmitting(false);
-        return;
-      }
-      if (node.options.length === 0) {
-        setError(`El nodo "${node.node_key}" no tiene opciones.`);
-        setSubmitting(false);
-        return;
-      }
-      if (nodeKeys.has(node.node_key)) {
-        setError(`node_key duplicado: ${node.node_key}`);
-        setSubmitting(false);
-        return;
-      }
+      if (!node.node_key.trim()) { setError('Todos los nodos deben tener node_key'); setSubmitting(false); return; }
+      if (!node.prompt_text.trim()) { setError(`El nodo "${node.node_key}" no tiene pregunta/mensaje.`); setSubmitting(false); return; }
+      if (node.options.length === 0) { setError(`El nodo "${node.node_key}" no tiene opciones.`); setSubmitting(false); return; }
+      if (nodeKeys.has(node.node_key)) { setError(`node_key duplicado: ${node.node_key}`); setSubmitting(false); return; }
       nodeKeys.add(node.node_key);
     }
 
     for (const node of nodes) {
       for (const option of node.options) {
-        if (!option.label_text.trim()) {
-          setError(`Hay una opción vacía en el nodo "${node.node_key}".`);
-          setSubmitting(false);
-          return;
-        }
-        if (option.next_type === 'node' && !option.next_node_key.trim()) {
-          setError(`La opción "${option.label_text}" debe apuntar a un nodo destino.`);
-          setSubmitting(false);
-          return;
-        }
+        if (!option.label_text.trim()) { setError(`Hay una opción vacía en el nodo "${node.node_key}".`); setSubmitting(false); return; }
+        if (option.next_type === 'node' && !option.next_node_key.trim()) { setError(`La opción "${option.label_text}" debe apuntar a un nodo destino.`); setSubmitting(false); return; }
       }
     }
 
@@ -270,269 +236,349 @@ export default function BackofficeFlowBuilderPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        client_id: clientId,
-        name,
-        welcome_message: welcomeMessage,
-        is_active: true,
-        max_steps: maxSteps,
-        max_irrelevant_streak: maxIrrelevantStreak,
-        max_reminders: maxReminders,
-        reminder_delay_minutes: reminderDelayMinutes,
+        client_id: clientId, name, welcome_message: welcomeMessage, is_active: true,
+        max_steps: maxSteps, max_irrelevant_streak: maxIrrelevantStreak,
+        max_reminders: maxReminders, reminder_delay_minutes: reminderDelayMinutes,
         steps: toPayload(nodes)
       })
     });
 
     const payload = await response.json();
-    if (!response.ok) {
-      setError(payload.error ?? 'No se pudo crear flujo');
-      setSubmitting(false);
-      return;
-    }
-
+    if (!response.ok) { setError(payload.error ?? 'No se pudo crear flujo'); setSubmitting(false); return; }
     setSuccess('Flujo creado y activado correctamente.');
     setSubmitting(false);
   }
 
   const nodeKeyOptions = nodes.map((n) => n.node_key).filter(Boolean);
+  const referencedNodeKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const node of nodes) {
+      for (const option of node.options) {
+        if (option.next_type === 'node' && option.next_node_key) {
+          keys.add(option.next_node_key);
+        }
+      }
+    }
+    return keys;
+  }, [nodes]);
 
-  const typeLabel: Record<string, string> = {
-    node: 'Ir a nodo',
-    human: 'Escalar',
-    terminal: 'Cierre'
+  const startNode = useMemo(() => {
+    return nodes.find((n) => n.node_key === 'inicio') ?? nodes[0] ?? null;
+  }, [nodes]);
+
+  const orphanNodes = useMemo(() => {
+    const rootKey = startNode?.node_key ?? '';
+    return nodes.filter((node) => node.node_key !== rootKey && !referencedNodeKeys.has(node.node_key));
+  }, [nodes, referencedNodeKeys, startNode]);
+
+  /* ─── Shared styles ─── */
+  const inputStyle: React.CSSProperties = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    background: '#1e293b', border: '1px solid #334155',
+    color: '#f1f5f9', fontSize: 13, fontFamily: 'inherit', outline: 'none'
   };
 
-  const typeClass: Record<string, string> = {
-    node: 'option-type-node',
-    human: 'option-type-human',
-    terminal: 'option-type-terminal'
+  const labelStyle: React.CSSProperties = {
+    fontSize: 11, fontWeight: 700, color: '#64748b',
+    textTransform: 'uppercase', letterSpacing: '0.05em'
   };
+
+  const cardStyle: React.CSSProperties = {
+    background: '#0f172a', border: '1px solid #1e293b', borderRadius: 10, padding: 16
+  };
+
+  const btnPrimary: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '8px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700,
+    background: '#3b82f6', border: 'none', color: 'white', cursor: 'pointer'
+  };
+
+  const btnSecondary: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+    background: 'transparent', border: '1px solid #334155',
+    color: '#94a3b8', cursor: 'pointer'
+  };
+
+  const btnDanger: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', gap: 4,
+    padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+    background: 'rgba(220,38,38,0.12)', border: '1px solid rgba(220,38,38,0.25)',
+    color: '#f87171', cursor: 'pointer'
+  };
+
+  const typeBadge: Record<string, React.CSSProperties> = {
+    node: { background: 'rgba(59,130,246,0.15)', color: '#60a5fa', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' },
+    human: { background: 'rgba(245,158,11,0.15)', color: '#fbbf24', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' },
+    terminal: { background: 'rgba(107,114,128,0.15)', color: '#9ca3af', padding: '2px 8px', borderRadius: 4, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }
+  };
+
+  const typeLabel: Record<string, string> = { node: 'Ir a nodo', human: 'Escalar', terminal: 'Cierre' };
+
+  function renderNodeTree(node: BuilderNode, depth = 0, ancestry = new Set<string>()): React.ReactNode {
+    const isCycle = ancestry.has(node.node_key);
+    if (isCycle) {
+      return (
+        <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(220,38,38,0.12)', color: '#fecaca', fontSize: 12 }}>
+          Ciclo detectado en nodo: {node.node_key}
+        </div>
+      );
+    }
+
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(node.node_key);
+
+    return (
+      <div
+        key={`${node.id}-${depth}`}
+        style={{
+          marginLeft: depth > 0 ? 18 : 0,
+          borderLeft: depth > 0 ? '2px solid #334155' : 'none',
+          paddingLeft: depth > 0 ? 12 : 0
+        }}
+      >
+        <div
+          style={{
+            background: '#1e293b',
+            border: '1px solid #334155',
+            borderRadius: 8,
+            padding: 14,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 10
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <strong style={{ fontSize: 13, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <GitBranch size={12} /> {node.node_key || 'nodo_sin_key'}
+            </strong>
+            <button type="button" onClick={() => removeNode(node.id)} disabled={nodes.length <= 1} style={btnDanger}>
+              <Trash2 size={11} />
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={labelStyle}>Node key</label>
+            <input style={inputStyle} placeholder="ej: inicio" value={node.node_key} onChange={(e) => updateNode(node.id, { node_key: e.target.value })} required />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={labelStyle}>Pregunta / mensaje</label>
+            <textarea style={{ ...inputStyle, resize: 'vertical' }} placeholder="¿Qué necesitas?" rows={2} value={node.prompt_text} onChange={(e) => updateNode(node.id, { prompt_text: e.target.value })} required />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={labelStyle}>Opciones</span>
+            <button type="button" onClick={() => addOption(node.id)} disabled={node.options.length >= MAX_OPTIONS} style={btnSecondary}>
+              <Plus size={11} /> Opción
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {node.options.map((option) => {
+              const childNode =
+                option.next_type === 'node'
+                  ? nodes.find((n) => n.node_key === option.next_node_key) ?? null
+                  : null;
+
+              return (
+                <div
+                  key={option.id}
+                  style={{
+                    background: '#0f172a',
+                    border: '1px solid #1e293b',
+                    borderRadius: 6,
+                    padding: 10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 8
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={typeBadge[option.next_type]}>{typeLabel[option.next_type]}</span>
+                    <button type="button" onClick={() => removeOption(node.id, option.id)} disabled={node.options.length <= 1} style={btnDanger}>
+                      <Trash2 size={10} />
+                    </button>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 8 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <label style={labelStyle}>Texto opción</label>
+                      <input style={inputStyle} placeholder="Texto de la opción" value={option.label_text} onChange={(e) => updateOption(node.id, option.id, { label_text: e.target.value })} required />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <label style={labelStyle}>Score delta</label>
+                      <input style={inputStyle} type="number" placeholder="0" value={option.score_delta} onChange={(e) => updateOption(node.id, option.id, { score_delta: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <label style={labelStyle}>Destino</label>
+                    <select style={inputStyle} value={option.next_type} onChange={(e) => updateOption(node.id, option.id, { next_type: e.target.value as BuilderOption['next_type'], next_node_key: e.target.value === 'node' ? option.next_node_key : '' })}>
+                      <option value="node">Ir a otro nodo</option>
+                      <option value="human">Escalar a humano</option>
+                      <option value="terminal">Cierre amable</option>
+                    </select>
+                  </div>
+
+                  {option.next_type === 'node' ? (
+                    <>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          <label style={labelStyle}>Nodo destino</label>
+                          <select style={inputStyle} value={option.next_node_key} onChange={(e) => updateOption(node.id, option.id, { next_node_key: e.target.value })}>
+                            <option value="">Seleccionar...</option>
+                            {nodeKeyOptions.map((key) => (
+                              <option key={key} value={key}>
+                                {key}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <button type="button" onClick={() => createLinkedSubnode(node.id, option.id)} disabled={nodes.length >= MAX_NODES} style={btnSecondary}>
+                          <Link2 size={11} /> Subnodo
+                        </button>
+                      </div>
+
+                      {option.next_node_key && !childNode ? (
+                        <div style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#fde68a', fontSize: 12 }}>
+                          El nodo destino "{option.next_node_key}" no existe.
+                        </div>
+                      ) : null}
+
+                      {childNode ? (
+                        <div style={{ marginTop: 6 }}>{renderNodeTree(childNode, depth + 1, nextAncestry)}</div>
+                      ) : null}
+                    </>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="admin-page">
-      <div className="admin-header">
-        <div className="admin-row">
+    <div style={{ minHeight: '100dvh', background: '#111827', color: '#e5e7eb' }}>
+      {/* ─── Header ─── */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 30,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '8px 14px', background: '#0f172a', borderBottom: '1px solid #1e293b'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Link href="/backoffice">
-            <button className="btn btn-secondary btn-sm">
-              <ArrowLeft size={14} />
-              Volver
-            </button>
+            <button style={btnSecondary}><ArrowLeft size={13} /> Volver</button>
           </Link>
-          <h1>
-            <GitBranch size={18} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-            Crear flujo determinístico
-          </h1>
+          <span style={{ fontSize: 15, fontWeight: 800, color: '#f3f4f6', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <GitBranch size={15} /> Crear flujo
+          </span>
         </div>
       </div>
 
-      <div className="admin-body">
-        {error ? <div className="toast toast-error">{error}</div> : null}
-        {success ? <div className="toast toast-success">{success}</div> : null}
+      {/* ─── Body ─── */}
+      <div style={{ maxWidth: 800, margin: '0 auto', padding: '16px 14px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {error ? (
+          <div style={{ padding: '8px 12px', borderRadius: 6, background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.3)', color: '#fca5a5', fontSize: 13 }}>
+            {error}
+          </div>
+        ) : null}
+        {success ? (
+          <div style={{ padding: '8px 12px', borderRadius: 6, background: 'rgba(5,150,105,0.15)', border: '1px solid rgba(5,150,105,0.3)', color: '#6ee7b7', fontSize: 13 }}>
+            {success}
+          </div>
+        ) : null}
 
-        <form className="admin-form" onSubmit={onSubmit} style={{ gap: 20 }}>
-          {/* General config */}
-          <div className="admin-card">
-            <h2><Settings size={18} /> Configuración general</h2>
-            <div className="admin-form">
-              <div className="admin-row">
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Client ID</label>
-                  <input className="admin-input" placeholder="client_id" value={clientId} onChange={(e) => setClientId(e.target.value)} required />
+        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {/* Config */}
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 6, color: '#e2e8f0' }}>
+              <Settings size={15} /> Configuración general
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Client ID</label>
+                  <input style={inputStyle} placeholder="client_id" value={clientId} onChange={(e) => setClientId(e.target.value)} required />
                 </div>
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Nombre del flujo</label>
-                  <input className="admin-input" placeholder="Flujo comercial" value={name} onChange={(e) => setName(e.target.value)} required />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Nombre del flujo</label>
+                  <input style={inputStyle} placeholder="Flujo comercial" value={name} onChange={(e) => setName(e.target.value)} required />
                 </div>
               </div>
-              <div className="admin-field">
-                <label>Mensaje de bienvenida</label>
-                <textarea
-                  className="admin-input"
-                  rows={3}
-                  value={welcomeMessage}
-                  onChange={(e) => setWelcomeMessage(e.target.value)}
-                  required
-                  style={{ resize: 'vertical' }}
-                />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <label style={labelStyle}>Mensaje de bienvenida</label>
+                <textarea style={{ ...inputStyle, resize: 'vertical' }} rows={2} value={welcomeMessage} onChange={(e) => setWelcomeMessage(e.target.value)} required />
               </div>
-              <div className="admin-row">
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Max pasos</label>
-                  <input className="admin-input" type="number" min={1} max={20} value={maxSteps} onChange={(e) => setMaxSteps(Number(e.target.value))} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Max pasos</label>
+                  <input style={inputStyle} type="number" min={1} max={20} value={maxSteps} onChange={(e) => setMaxSteps(Number(e.target.value))} />
                 </div>
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Max irrelevantes</label>
-                  <input className="admin-input" type="number" min={1} max={10} value={maxIrrelevantStreak} onChange={(e) => setMaxIrrelevantStreak(Number(e.target.value))} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Max irrelev.</label>
+                  <input style={inputStyle} type="number" min={1} max={10} value={maxIrrelevantStreak} onChange={(e) => setMaxIrrelevantStreak(Number(e.target.value))} />
                 </div>
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Max recordatorios</label>
-                  <input className="admin-input" type="number" min={0} max={10} value={maxReminders} onChange={(e) => setMaxReminders(Number(e.target.value))} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Max record.</label>
+                  <input style={inputStyle} type="number" min={0} max={10} value={maxReminders} onChange={(e) => setMaxReminders(Number(e.target.value))} />
                 </div>
-                <div className="admin-field" style={{ flex: 1 }}>
-                  <label>Delay (min)</label>
-                  <input className="admin-input" type="number" min={1} max={10080} value={reminderDelayMinutes} onChange={(e) => setReminderDelayMinutes(Number(e.target.value))} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={labelStyle}>Delay (min)</label>
+                  <input style={inputStyle} type="number" min={1} max={10080} value={reminderDelayMinutes} onChange={(e) => setReminderDelayMinutes(Number(e.target.value))} />
                 </div>
               </div>
             </div>
           </div>
 
           {/* Nodes */}
-          <div className="admin-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h2 style={{ margin: 0 }}><GitBranch size={18} /> Nodos del árbol</h2>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={addNode} disabled={nodes.length >= MAX_NODES}>
-                <Plus size={14} />
-                Agregar nodo
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h2 style={{ fontSize: 14, fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 6, color: '#e2e8f0' }}>
+                <GitBranch size={15} /> Nodos del árbol
+              </h2>
+              <button type="button" onClick={addNode} disabled={nodes.length >= MAX_NODES} style={btnSecondary}>
+                <Plus size={12} /> Nodo
               </button>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {nodes.map((node, nodeIdx) => (
-                <div key={node.id} className="node-card">
-                  <div className="node-card-header">
-                    <strong>
-                      <GitBranch size={14} />
-                      Nodo #{nodeIdx + 1}
-                    </strong>
-                    <button type="button" className="btn btn-danger btn-sm" onClick={() => removeNode(node.id)} disabled={nodes.length <= 1}>
-                      <Trash2 size={12} />
-                      Eliminar
-                    </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {startNode ? (
+                <div>
+                  <div style={{ marginBottom: 8, fontSize: 11, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                    Árbol principal
                   </div>
+                  {renderNodeTree(startNode)}
+                </div>
+              ) : null}
 
-                  <div className="admin-row">
-                    <div className="admin-field" style={{ flex: 1 }}>
-                      <label>Node key</label>
-                      <input
-                        className="admin-input"
-                        placeholder="ej: inicio"
-                        value={node.node_key}
-                        onChange={(e) => updateNode(node.id, { node_key: e.target.value })}
-                        required
-                      />
-                    </div>
+              {orphanNodes.length > 0 ? (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ marginBottom: 8, fontSize: 11, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                    Nodos no conectados
                   </div>
-
-                  <div className="admin-field">
-                    <label>Pregunta / mensaje</label>
-                    <textarea
-                      className="admin-input"
-                      placeholder="¿Qué necesitas?"
-                      rows={2}
-                      value={node.prompt_text}
-                      onChange={(e) => updateNode(node.id, { prompt_text: e.target.value })}
-                      required
-                      style={{ resize: 'vertical' }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--admin-text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Opciones
-                    </span>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => addOption(node.id)} disabled={node.options.length >= MAX_OPTIONS}>
-                      <Plus size={12} />
-                      Opción
-                    </button>
-                  </div>
-
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {node.options.map((option) => (
-                      <div key={option.id} className="option-card">
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <span className={`option-type-indicator ${typeClass[option.next_type]}`}>
-                            {typeLabel[option.next_type]}
-                          </span>
-                          <button type="button" className="btn btn-danger btn-sm" onClick={() => removeOption(node.id, option.id)} disabled={node.options.length <= 1}>
-                            <Trash2 size={11} />
-                          </button>
-                        </div>
-                        <div className="admin-row">
-                          <div className="admin-field" style={{ flex: 2 }}>
-                            <label>Texto opción</label>
-                            <input
-                              className="admin-input"
-                              placeholder="Texto de la opción"
-                              value={option.label_text}
-                              onChange={(e) => updateOption(node.id, option.id, { label_text: e.target.value })}
-                              required
-                            />
-                          </div>
-                          <div className="admin-field" style={{ flex: 1 }}>
-                            <label>Score delta</label>
-                            <input
-                              className="admin-input"
-                              type="number"
-                              placeholder="0"
-                              value={option.score_delta}
-                              onChange={(e) => updateOption(node.id, option.id, { score_delta: Number(e.target.value) })}
-                            />
-                          </div>
-                        </div>
-                        <div className="admin-field">
-                          <label>Destino</label>
-                          <select
-                            className="admin-input"
-                            value={option.next_type}
-                            onChange={(e) =>
-                              updateOption(node.id, option.id, {
-                                next_type: e.target.value as BuilderOption['next_type'],
-                                next_node_key: e.target.value === 'node' ? option.next_node_key : ''
-                              })
-                            }
-                          >
-                            <option value="node">Ir a otro nodo</option>
-                            <option value="human">Escalar a humano</option>
-                            <option value="terminal">Cierre amable</option>
-                          </select>
-                        </div>
-                        {option.next_type === 'node' ? (
-                          <div className="admin-row">
-                            <div className="admin-field" style={{ flex: 1 }}>
-                              <label>Nodo destino</label>
-                              <select
-                                className="admin-input"
-                                value={option.next_node_key}
-                                onChange={(e) => updateOption(node.id, option.id, { next_node_key: e.target.value })}
-                              >
-                                <option value="">Selecciona nodo destino</option>
-                                {nodeKeyOptions.map((key) => (
-                                  <option key={key} value={key}>
-                                    {key}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => createLinkedSubnode(node.id, option.id)}
-                              disabled={nodes.length >= MAX_NODES}
-                              style={{ alignSelf: 'flex-end', marginBottom: 0 }}
-                            >
-                              <Link2 size={12} />
-                              Subnodo
-                            </button>
-                          </div>
-                        ) : null}
-                      </div>
+                    {orphanNodes.map((node) => (
+                      <div key={node.id}>{renderNodeTree(node)}</div>
                     ))}
                   </div>
                 </div>
-              ))}
+              ) : null}
             </div>
           </div>
 
           {/* Preview */}
-          <div className="admin-card">
-            <h2><Code2 size={18} /> Preview JSON</h2>
+          <div style={cardStyle}>
+            <h2 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: 6, color: '#e2e8f0' }}>
+              <Code2 size={15} /> Preview JSON
+            </h2>
             <textarea
-              className="admin-input"
-              rows={18}
+              style={{ ...inputStyle, fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }}
+              rows={14}
               value={payloadPreview}
               readOnly
-              style={{ fontFamily: 'monospace', fontSize: 12, resize: 'vertical', background: '#f9fafb' }}
             />
-            <button className="btn btn-primary" disabled={submitting} style={{ marginTop: 12 }}>
+            <button disabled={submitting} style={{ ...btnPrimary, marginTop: 10 }}>
               {submitting ? 'Creando...' : 'Aprobar y crear flujo'}
             </button>
           </div>
