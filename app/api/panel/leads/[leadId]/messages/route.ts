@@ -1,13 +1,13 @@
 import { requireTenantClientId } from '@/lib/domain/authz';
 import { fail, ok } from '@/lib/domain/http';
 
-export async function GET(_: Request, { params }: { params: { leadId: string } }) {
+export async function GET(_: Request, { params }: { params: Promise<{ leadId: string }> }) {
   const auth = await requireTenantClientId();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 
-  const { leadId } = params;
+  const { leadId } = await params;
 
   const { data: lead, error: leadError } = await auth.supabase
     .from('leads')

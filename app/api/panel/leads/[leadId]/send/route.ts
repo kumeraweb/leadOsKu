@@ -9,9 +9,9 @@ const bodySchema = z.object({
   text: z.string().min(1).max(2000)
 });
 
-export async function POST(req: Request, { params }: { params: { leadId: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ leadId: string }> }) {
   const auth = await requireTenantClientId();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 
@@ -21,7 +21,7 @@ export async function POST(req: Request, { params }: { params: { leadId: string 
     return fail('Invalid payload', 400);
   }
 
-  const { leadId } = params;
+  const { leadId } = await params;
 
   const { data: lead, error: leadError } = await auth.supabase
     .from('leads')

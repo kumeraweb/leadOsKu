@@ -1,21 +1,39 @@
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { env } from '@/lib/env';
+import type { User } from '@supabase/supabase-js';
 
-export async function requireUser() {
+type AuthFailure = {
+  ok: false;
+  error: string;
+  status: number;
+};
+
+type RequireUserSuccess = {
+  ok: true;
+  user: User;
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>;
+};
+
+type RequireTenantSuccess = RequireUserSuccess & { clientId: string };
+type RequireBackofficeSuccess = RequireUserSuccess & {
+  serviceSupabase: ReturnType<typeof createSupabaseServiceClient>;
+};
+
+export async function requireUser(): Promise<AuthFailure | RequireUserSuccess> {
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.getUser();
 
   if (error || !data.user) {
-    return { error: 'Unauthorized', status: 401 as const };
+    return { ok: false, error: 'Unauthorized', status: 401 };
   }
 
-  return { user: data.user, supabase };
+  return { ok: true, user: data.user, supabase };
 }
 
-export async function requireTenantClientId() {
+export async function requireTenantClientId(): Promise<AuthFailure | RequireTenantSuccess> {
   const auth = await requireUser();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return auth;
   }
 
@@ -27,19 +45,19 @@ export async function requireTenantClientId() {
     .maybeSingle();
 
   if (error) {
-    return { error: error.message, status: 403 as const };
+    return { ok: false, error: error.message, status: 403 };
   }
 
   if (!data?.client_id) {
-    return { error: 'Tenant relation not found', status: 403 as const };
+    return { ok: false, error: 'Tenant relation not found', status: 403 };
   }
 
-  return { user: auth.user, supabase: auth.supabase, clientId: data.client_id as string };
+  return { ok: true, user: auth.user, supabase: auth.supabase, clientId: data.client_id as string };
 }
 
-export async function requireBackofficeAdmin() {
+export async function requireBackofficeAdmin(): Promise<AuthFailure | RequireBackofficeSuccess> {
   const auth = await requireUser();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return auth;
   }
 
@@ -47,10 +65,11 @@ export async function requireBackofficeAdmin() {
   const current = auth.user.email?.toLowerCase();
 
   if (!expected || !current || expected !== current) {
-    return { error: 'Forbidden', status: 403 as const };
+    return { ok: false, error: 'Forbidden', status: 403 };
   }
 
   return {
+    ok: true,
     user: auth.user,
     supabase: auth.supabase,
     serviceSupabase: createSupabaseServiceClient()

@@ -9,7 +9,7 @@ const assignSchema = z.object({
 
 export async function POST(req: Request) {
   const auth = await requireBackofficeAdmin();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 

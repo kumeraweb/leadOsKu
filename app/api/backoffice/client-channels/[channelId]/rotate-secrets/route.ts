@@ -8,9 +8,9 @@ const rotateSchema = z.object({
   meta_app_secret: z.string().min(1)
 });
 
-export async function PATCH(req: Request, { params }: { params: { channelId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ channelId: string }> }) {
   const auth = await requireBackofficeAdmin();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 
@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: { channelId: str
     return fail('Invalid payload', 400);
   }
 
-  const { channelId } = params;
+  const { channelId } = await params;
 
   const { data, error } = await auth.serviceSupabase
     .from('client_channels')

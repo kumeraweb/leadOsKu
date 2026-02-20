@@ -5,7 +5,7 @@ const statusOrder = ['HUMAN_REQUIRED', 'ACTIVE', 'HUMAN_TAKEN', 'CLOSED'];
 
 export async function GET() {
   const auth = await requireTenantClientId();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 

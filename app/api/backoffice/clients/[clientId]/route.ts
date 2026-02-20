@@ -9,9 +9,9 @@ const updateClientSchema = z.object({
   strategic_questions: z.array(z.string()).max(3).optional()
 });
 
-export async function PATCH(req: Request, { params }: { params: { clientId: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ clientId: string }> }) {
   const auth = await requireBackofficeAdmin();
-  if ('error' in auth) {
+  if (!auth.ok) {
     return fail(auth.error, auth.status);
   }
 
@@ -21,7 +21,7 @@ export async function PATCH(req: Request, { params }: { params: { clientId: stri
     return fail('Invalid payload', 400);
   }
 
-  const { clientId } = params;
+  const { clientId } = await params;
 
   const { data, error } = await auth.serviceSupabase
     .from('clients')
