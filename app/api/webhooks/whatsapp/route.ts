@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { NextResponse } from 'next/server';
 import { ok, fail } from '@/lib/domain/http';
 import { createSupabaseServiceClient } from '@/lib/supabase/service';
 import { classifyAndExtract } from '@/lib/domain/ai';
@@ -7,6 +8,31 @@ import { MAX_STEPS, getClosingMessage, getEscalationMessage, getNextQuestion } f
 import { decryptSecret } from '@/lib/domain/crypto';
 import { sendWhatsappText } from '@/lib/domain/messaging';
 import { sendLeadNotificationEmail } from '@/lib/domain/email';
+
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const mode = url.searchParams.get('hub.mode');
+  const token = url.searchParams.get('hub.verify_token');
+  const challenge = url.searchParams.get('hub.challenge');
+
+  const expectedToken = process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN;
+
+  if (!expectedToken) {
+    return NextResponse.json(
+      { error: 'Missing WHATSAPP_WEBHOOK_VERIFY_TOKEN' },
+      { status: 500 }
+    );
+  }
+
+  if (mode === 'subscribe' && token === expectedToken && challenge) {
+    return new NextResponse(challenge, {
+      status: 200,
+      headers: { 'Content-Type': 'text/plain' }
+    });
+  }
+
+  return NextResponse.json({ error: 'Webhook verification failed' }, { status: 403 });
+}
 
 const webhookSchema = z.object({
   entry: z
