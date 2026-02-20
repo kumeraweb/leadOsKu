@@ -11,6 +11,7 @@ import {
   extractDirectOption,
   FlowOption,
   formatOutOfScopeMessage,
+  isBackToMainMenuCommand,
   renderOptionsList,
   renderStepPrompt,
   wantsOptionsList
@@ -368,6 +369,7 @@ export async function POST(req: Request) {
   if (!stepBundle || stepBundle.options.length === 0) {
     return ok({ received: true, ignored: true, reason: 'invalid_step_or_options' });
   }
+  const isSubmenu = stepBundle.step.id !== flowBundle.firstStep.id;
 
   const extractedFields =
     lead.extracted_fields && typeof lead.extracted_fields === 'object' ? lead.extracted_fields : {};
@@ -392,7 +394,9 @@ export async function POST(req: Request) {
         phoneNumberId: parsed.phoneNumberId,
         waUserId: parsed.waUserId,
         accessTokenEnc: channel.meta_access_token_enc,
-        text: renderStepPrompt(stepBundle.step.prompt_text, stepBundle.options)
+        text: renderStepPrompt(stepBundle.step.prompt_text, stepBundle.options, {
+          includeBackToMainMenu: isSubmenu
+        })
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : 'Could not send welcome message', 500);
@@ -524,6 +528,45 @@ export async function POST(req: Request) {
     return ok({ received: true, waiting_reentry_choice: true });
   }
 
+  if (isSubmenu && isBackToMainMenuCommand(parsed.text)) {
+    const { data: firstOptions } = await service
+      .from('flow_step_options')
+      .select('id, option_order, option_code, label_text, score_delta, is_contact_human, is_terminal, next_step_id')
+      .eq('step_id', flowBundle.firstStep.id)
+      .order('option_order', { ascending: true });
+
+    const resetLead = await service
+      .from('leads')
+      .update({
+        current_step_id: flowBundle.firstStep.id,
+        current_step: flowBundle.firstStep.step_order,
+        irrelevant_streak: 0,
+        extracted_fields: { ...extractedFields, awaiting_reentry_choice: false },
+        last_user_message_at: new Date().toISOString(),
+        next_reminder_at: addMinutesIso(new Date(), Number(flowBundle.flow.reminder_delay_minutes))
+      })
+      .eq('id', lead.id);
+    if (resetLead.error) {
+      return fail(resetLead.error.message, 500);
+    }
+
+    try {
+      await sendBotMessage({
+        service,
+        clientId: client.id,
+        leadId: lead.id,
+        phoneNumberId: parsed.phoneNumberId,
+        waUserId: parsed.waUserId,
+        accessTokenEnc: channel.meta_access_token_enc,
+        text: ['Perfecto. Volvemos al menú principal:', renderOptionsList((firstOptions ?? []) as FlowOption[])].join('\n')
+      });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : 'Could not send main menu', 500);
+    }
+
+    return ok({ received: true, back_to_main_menu: true });
+  }
+
   const deterministicOption = extractDirectOption(parsed.text, stepBundle.options);
   let selectedOption = deterministicOption;
   let mappingSource: 'DIRECT_OPTION' | 'AI_MAPPED' | 'OUT_OF_SCOPE' = 'DIRECT_OPTION';
@@ -550,7 +593,10 @@ export async function POST(req: Request) {
         phoneNumberId: parsed.phoneNumberId,
         waUserId: parsed.waUserId,
         accessTokenEnc: channel.meta_access_token_enc,
-        text: ['Perfecto, estas son las opciones disponibles:', renderOptionsList(stepBundle.options)].join('\n')
+        text: [
+          'Perfecto, estas son las opciones disponibles:',
+          renderOptionsList(stepBundle.options, { includeBackToMainMenu: isSubmenu })
+        ].join('\n')
       });
     } catch (error) {
       return fail(error instanceof Error ? error.message : 'Could not send options list', 500);
@@ -649,9 +695,14 @@ export async function POST(req: Request) {
           leadId: lead.id,
           phoneNumberId: parsed.phoneNumberId,
           waUserId: parsed.waUserId,
-          accessTokenEnc: channel.meta_access_token_enc,
-          text: formatOutOfScopeMessage(stepBundle.step.prompt_text, stepBundle.options)
-        });
+        accessTokenEnc: channel.meta_access_token_enc,
+        text: [
+          formatOutOfScopeMessage(stepBundle.step.prompt_text, stepBundle.options),
+          isSubmenu ? '\nTambién puedes responder 0 para volver al menú principal.' : ''
+        ]
+          .filter(Boolean)
+          .join('\n')
+      });
       } catch (error) {
         return fail(error instanceof Error ? error.message : 'Could not send guidance message', 500);
       }
@@ -819,7 +870,10 @@ export async function POST(req: Request) {
     .eq('step_id', nextStep.id)
     .order('option_order', { ascending: true });
 
-  const nextText = renderStepPrompt(nextStep.prompt_text, (nextOptions ?? []) as FlowOption[]);
+  const nextIsSubmenu = nextStep.id !== flowBundle.firstStep.id;
+  const nextText = renderStepPrompt(nextStep.prompt_text, (nextOptions ?? []) as FlowOption[], {
+    includeBackToMainMenu: nextIsSubmenu
+  });
 
   try {
     await sendBotMessage({

@@ -9,6 +9,10 @@ export type FlowOption = {
   next_step_id?: string | null;
 };
 
+type RenderConfig = {
+  includeBackToMainMenu?: boolean;
+};
+
 function normalize(input: string): string {
   return input
     .toLowerCase()
@@ -26,16 +30,20 @@ function promptAlreadyContainsOptions(promptText: string, options: FlowOption[])
   return options.some((option) => normalizedPrompt.includes(normalize(option.label_text)));
 }
 
-export function renderOptionsList(options: FlowOption[]): string {
-  return options.map((option) => `${option.option_order}) ${option.label_text}`).join('\n');
+export function renderOptionsList(options: FlowOption[], config: RenderConfig = {}): string {
+  const lines = options.map((option) => `${option.option_order}) ${option.label_text}`);
+  if (config.includeBackToMainMenu) {
+    lines.push('0) Volver al menú principal');
+  }
+  return lines.join('\n');
 }
 
-export function renderStepPrompt(promptText: string, options: FlowOption[]): string {
+export function renderStepPrompt(promptText: string, options: FlowOption[], config: RenderConfig = {}): string {
   if (promptAlreadyContainsOptions(promptText, options)) {
     return promptText;
   }
 
-  return [promptText, renderOptionsList(options)].join('\n');
+  return [promptText, renderOptionsList(options, config)].join('\n');
 }
 
 export function formatOutOfScopeMessage(promptText: string, options: FlowOption[]): string {
@@ -89,5 +97,17 @@ export function wantsOptionsList(input: string): boolean {
     text === 'sí' ||
     text.includes('mostrar opciones') ||
     text.includes('ver opciones')
+  );
+}
+
+export function isBackToMainMenuCommand(input: string): boolean {
+  const text = normalize(input);
+  return (
+    text === '0' ||
+    text === 'menu' ||
+    text === 'menú' ||
+    text === 'menu principal' ||
+    text === 'volver al menu principal' ||
+    text === 'volver al menú principal'
   );
 }
