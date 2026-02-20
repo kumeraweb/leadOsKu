@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { ArrowLeft, LogOut, UserCheck, XCircle, Send } from 'lucide-react';
@@ -31,26 +31,38 @@ export default function LeadConversationPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function load() {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
 
-    const response = await fetch(`/api/panel/leads/${params.leadId}/messages`, { cache: 'no-store' });
-    const payload = await response.json();
+      const response = await fetch(`/api/panel/leads/${params.leadId}/messages`, { cache: 'no-store' });
+      const payload = await response.json();
 
-    if (!response.ok) {
-      setError(payload.error ?? 'No se pudo cargar la conversación');
-      setLoading(false);
-      return;
-    }
+      if (!response.ok) {
+        setError(payload.error ?? 'No se pudo cargar la conversación');
+        if (!silent) {
+          setLoading(false);
+        }
+        return;
+      }
 
-    setLead(payload.lead);
-    setMessages(payload.messages ?? []);
-    setLoading(false);
-  }
+      setLead(payload.lead);
+      setMessages(payload.messages ?? []);
+      if (!silent) {
+        setLoading(false);
+      }
+    },
+    [params.leadId]
+  );
 
   useEffect(() => {
     let active = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let realtimeChannel: ReturnType<typeof supabase.channel> | null = null;
 
     async function run() {
       const { data } = await supabase.auth.getUser();
@@ -61,13 +73,49 @@ export default function LeadConversationPage() {
 
       if (!active) return;
       await load();
+
+      realtimeChannel = supabase
+        .channel(`panel-lead-${params.leadId}-${data.user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages',
+            filter: `lead_id=eq.${params.leadId}`
+          },
+          () => {
+            void load({ silent: true });
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'leads',
+            filter: `id=eq.${params.leadId}`
+          },
+          () => {
+            void load({ silent: true });
+          }
+        )
+        .subscribe();
+
+      intervalId = setInterval(() => {
+        void load({ silent: true });
+      }, 6000);
     }
 
-    run();
+    void run();
     return () => {
       active = false;
+      if (intervalId) clearInterval(intervalId);
+      if (realtimeChannel) {
+        void supabase.removeChannel(realtimeChannel);
+      }
     };
-  }, [params.leadId, router, supabase]);
+  }, [load, params.leadId, router, supabase]);
 
   async function onTake() {
     const response = await fetch(`/api/panel/leads/${params.leadId}/take`, { method: 'POST' });
@@ -106,7 +154,7 @@ export default function LeadConversationPage() {
     }
 
     setMessageText('');
-    await load();
+    await load({ silent: true });
   }
 
   async function signOut() {

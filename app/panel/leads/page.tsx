@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { RefreshCw, LogOut, Eye, Building2, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -35,33 +35,98 @@ export default function PanelLeadsPage() {
   const totalPages = Math.max(1, Math.ceil(leads.length / PAGE_SIZE));
   const pagedLeads = leads.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  async function loadLeads() {
-    setLoading(true);
-    setError(null);
+  const loadLeads = useCallback(
+    async (options?: { silent?: boolean; keepPage?: boolean }) => {
+      const silent = Boolean(options?.silent);
+      if (!silent) {
+        setLoading(true);
+      }
+      setError(null);
 
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      router.push('/panel/login');
-      return;
-    }
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.push('/panel/login');
+        return;
+      }
 
-    const response = await fetch('/api/panel/leads', { cache: 'no-store' });
-    const payload = await response.json();
+      const response = await fetch('/api/panel/leads', { cache: 'no-store' });
+      const payload = await response.json();
 
-    if (!response.ok) {
-      setError(payload.error ?? 'No se pudo cargar leads');
-    } else {
-      setLeads(payload.leads ?? []);
-      setTenant(payload.tenant ?? null);
-      setPage(0);
-    }
-    setLoading(false);
-  }
+      if (!response.ok) {
+        setError(payload.error ?? 'No se pudo cargar leads');
+      } else {
+        const nextLeads = payload.leads ?? [];
+        setLeads(nextLeads);
+        setTenant(payload.tenant ?? null);
+        if (!options?.keepPage) {
+          setPage(0);
+        } else {
+          setPage((prev) => {
+            const nextTotalPages = Math.max(1, Math.ceil(nextLeads.length / PAGE_SIZE));
+            return Math.min(prev, nextTotalPages - 1);
+          });
+        }
+      }
+      if (!silent) {
+        setLoading(false);
+      }
+    },
+    [router, supabase]
+  );
 
   useEffect(() => {
-    loadLeads();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, supabase]);
+    let isMounted = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    async function setup() {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.push('/panel/login');
+        return;
+      }
+      if (!isMounted) return;
+
+      await loadLeads();
+
+      const realtimeChannel = supabase
+        .channel(`panel-leads-${data.user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'leads' },
+          () => {
+            void loadLeads({ silent: true, keepPage: true });
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'messages' },
+          () => {
+            void loadLeads({ silent: true, keepPage: true });
+          }
+        )
+        .subscribe();
+
+      intervalId = setInterval(() => {
+        void loadLeads({ silent: true, keepPage: true });
+      }, 10000);
+
+      return () => {
+        if (intervalId) clearInterval(intervalId);
+        void supabase.removeChannel(realtimeChannel);
+      };
+    }
+
+    let cleanup: (() => void) | undefined;
+    void setup().then((fn) => {
+      cleanup = fn;
+    });
+
+    return () => {
+      isMounted = false;
+      if (cleanup) cleanup();
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [loadLeads, router, supabase]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -94,7 +159,7 @@ export default function PanelLeadsPage() {
           ) : null}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={loadLeads} style={{
+          <button onClick={() => void loadLeads()} style={{
             display: 'inline-flex', alignItems: 'center', gap: 4,
             padding: '6px 10px', borderRadius: 6,
             background: 'transparent', border: '1px solid #334155',
